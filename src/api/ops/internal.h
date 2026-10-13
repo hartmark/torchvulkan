@@ -14,6 +14,7 @@ at::Tensor divide_scalar_vulkan(const at::Tensor& self, const at::Scalar& other)
 at::Tensor sum_vulkan(const at::Tensor& self, c10::optional<at::ScalarType> dtype);
 
 // tensor/allocation.cpp
+void resize_bytes_vulkan(c10::StorageImpl* storage, size_t nbytes);
 const at::Tensor& resize_vulkan(const at::Tensor& self, c10::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format);
 
 // tensor/transfer.cpp

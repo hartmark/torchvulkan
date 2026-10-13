@@ -3,6 +3,7 @@
 
 #include "vulkan/vulkan_context.h"
 #include "vulkan/allocator.h" 
+#include "api/ops/internal.h"
 
 struct VulkanHooksInterface : public at::PrivateUse1HooksInterface 
 {
@@ -16,7 +17,7 @@ struct VulkanHooksInterface : public at::PrivateUse1HooksInterface
     }
 
     void resizePrivateUse1Bytes(const c10::Storage& storage, size_t newsize) const override {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Native resizing is not implemented yet.");
+        torchvulkan::resize_bytes_vulkan(storage.unsafeGetStorageImpl(), newsize);
     }
 
     const at::Generator& getDefaultGenerator(c10::DeviceIndex device_index) const override {

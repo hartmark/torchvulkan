@@ -1,6 +1,8 @@
 #include <torch/extension.h>
 #include <c10/core/MemoryFormat.h>
+#include <ATen/native/Resize.h>
 #include "vulkan/memory.h"
+#include "vulkan/allocator.h"
 #include "vulkan/vulkan_context.h"
 #include "api/ops/helpers.h"
 #include "api/ops/internal.h"
@@ -100,6 +102,22 @@ at::Tensor empty_strided_vulkan(
 
 } // namespace
 
+void torchvulkan::resize_bytes_vulkan(c10::StorageImpl* storage, size_t nbytes)
+{
+    TORCH_CHECK(storage->resizable(), "torchvulkan [ERROR]: Trying to resize storage that is not resizable.");
+
+    at::DataPtr new_data;
+    if (nbytes != 0) new_data = storage->allocator()->allocate(nbytes);
+
+    size_t copy_bytes = std::min(nbytes, storage->nbytes());
+    if (copy_bytes > 0 && storage->data() != nullptr) {
+        globalVulkanAllocator.copy_device_to_device(new_data.get(), /* dest_offset = */ 0, storage->data(), /* src_offset = */ 0, copy_bytes);
+    }
+
+    storage->set_data_ptr_noswap(std::move(new_data));
+    storage->set_nbytes(nbytes);
+}
+
 const at::Tensor& torchvulkan::resize_vulkan(
     const at::Tensor& self, 
     c10::IntArrayRef size, 
@@ -109,16 +127,10 @@ const at::Tensor& torchvulkan::resize_vulkan(
 
     int64_t numel = 1;
     for (auto s : size) numel *= s;
-    size_t new_bytes = numel * self.itemsize();
+    size_t new_bytes = (impl->storage_offset() + numel) * self.itemsize();
 
     if (impl->storage().nbytes() < new_bytes) {
-        auto new_storage = c10::make_intrusive<c10::StorageImpl>(
-            c10::StorageImpl::use_byte_size_t(),
-            new_bytes,
-            c10::GetAllocator(c10::DeviceType::PrivateUse1),
-            /* resizeable = */ true
-        );
-        impl->set_storage_keep_dtype(std::move(new_storage));
+        torchvulkan::resize_bytes_vulkan(impl->storage().unsafeGetStorageImpl(), new_bytes);
     }
 
     at::MemoryFormat format = memory_format.value_or(at::MemoryFormat::Contiguous);
@@ -129,6 +141,44 @@ const at::Tensor& torchvulkan::resize_vulkan(
 }
 
 namespace {
+
+at::Tensor& set_source_storage_offset_vulkan(
+    at::Tensor& self,
+    c10::Storage source,
+    int64_t storage_offset,
+    c10::IntArrayRef size,
+    c10::IntArrayRef stride)
+{
+    at::native::checkSetStorage(self, std::move(source), storage_offset, size, stride);
+
+    std::vector<int64_t> strides = stride.empty() ? compute_strides(size, at::MemoryFormat::Contiguous) : stride.vec();
+    size_t needed = at::detail::computeStorageNbytes(size, strides, self.itemsize(), storage_offset);
+    TORCH_CHECK(needed <= self.storage().nbytes(), 
+        "torchvulkan [ERROR]: set_ needs ", needed, " bytes, but the storage only has ", self.storage().nbytes(), "."
+    );
+
+    self.unsafeGetTensorImpl()->set_storage_offset(storage_offset);
+    self.unsafeGetTensorImpl()->set_sizes_and_strides(size, strides);
+    return self;
+}
+
+at::Tensor& set_source_storage_vulkan(at::Tensor& self, c10::Storage source)
+{
+    int64_t numel = static_cast<int64_t>(source.nbytes() / self.itemsize());
+    return set_source_storage_offset_vulkan(self, std::move(source), 0, {numel}, {});
+}
+
+at::Tensor& set_source_tensor_vulkan(at::Tensor& self, const at::Tensor& source)
+{
+    if (self.unsafeGetTensorImpl() == source.unsafeGetTensorImpl()) return self;
+    return set_source_storage_offset_vulkan(self, source.storage(), source.storage_offset(), source.sizes(), source.strides());
+}
+
+at::Tensor& set_empty_vulkan(at::Tensor& self)
+{
+    c10::Storage storage(c10::Storage::use_byte_size_t(), 0, c10::GetAllocator(c10::DeviceType::PrivateUse1), /* resizable = */ true);
+    return set_source_storage_offset_vulkan(self, std::move(storage), 0, {0}, {});
+}
 
 at::Tensor clone_vulkan(const at::Tensor& self, c10::optional<at::MemoryFormat> memory_format) 
 {
@@ -147,4 +197,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("empty_strided", &empty_strided_vulkan);
     m.impl("resize_", &torchvulkan::resize_vulkan);
     m.impl("clone", &clone_vulkan);
+    m.impl("set_.source_Storage_storage_offset", &set_source_storage_offset_vulkan);
+    m.impl("set_.source_Storage", &set_source_storage_vulkan);
+    m.impl("set_.source_Tensor", &set_source_tensor_vulkan);
+    m.impl("set_", &set_empty_vulkan);
 }
