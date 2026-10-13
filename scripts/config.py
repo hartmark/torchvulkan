@@ -152,4 +152,7 @@ KERNELS = [
     Kernel('multinomial', 'ops/multinomial.slang', [
         Entry('multinomial_main', [F64, F32]),
     ]),
+    Kernel('distribution', 'ops/distribution.slang', [
+        Entry('distribution_main', FLOATS),
+    ]),
 ]
