@@ -1,6 +1,8 @@
 #include <torch/extension.h>
+#include <torch/csrc/Generator.h>
 #include "vulkan/vulkan_context.h"
 #include "vulkan/allocator.h"
+#include "vulkan/generator.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.doc() = "torchvulkan backend";
@@ -31,6 +33,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     m.def("synchronize", []() {
         VulkanContext::Instance().CurrentDeviceContext()->flush();
+    });
+
+    m.def("_default_generator", [](int64_t device_index) {
+        return py::reinterpret_steal<py::object>(THPGenerator_initDefaultGenerator(VulkanGeneratorImpl::default_generator(device_index)));
+    });
+
+    m.def("_manual_seed", [](int64_t device_index, uint64_t seed) {
+        VulkanGeneratorImpl::manual_seed(static_cast<c10::DeviceIndex>(device_index), seed);
+    });
+
+    m.def("_manual_seed_all", [](uint64_t seed) {
+        VulkanGeneratorImpl::manual_seed_all(seed);
+    });
+
+    m.def("_is_in_bad_fork", []() -> bool {
+        return VulkanContext::IsInBadFork();
     });
 
     m.def("empty_cache", []() {

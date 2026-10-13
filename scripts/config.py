@@ -143,4 +143,16 @@ KERNELS = [
     Kernel('matmul_coop_64', 'ops/matmul_coop.slang', [
         Entry('matmul_coop_main', DTYPES, ('vec',), constants=(64,)),
     ]),
+    Kernel('random', 'ops/random.slang', [
+        Entry('random_main', DTYPES, ('vec',)),
+    ]),
+    Kernel('dropout', 'ops/dropout.slang', [
+        Entry('dropout_main', FLOATS, ('vec',)),
+    ]),
+    Kernel('multinomial', 'ops/multinomial.slang', [
+        Entry('multinomial_main', [F64, F32]),
+    ]),
+    Kernel('distribution', 'ops/distribution.slang', [
+        Entry('distribution_main', FLOATS),
+    ]),
 ]

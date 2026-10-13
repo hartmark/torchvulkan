@@ -6,6 +6,8 @@ import torchvulkan as torchvk
 from torch.testing._internal.common_utils import TestCase, run_tests
 from torch.testing._internal.common_device_type import instantiate_device_type_tests, ops
 from torch.testing._internal.common_methods_invocations import op_db
+from torch.utils._python_dispatch import TorchDispatchMode
+from torch.utils._pytree import tree_map
 
 # all the datatypes we garantee to be supported by torchvk
 VULKAN_DTYPES = [
@@ -57,6 +59,20 @@ def is_not_implemented(exception: str):
         return True
 
     return False
+
+# records whether an op draws random numbers: every aten op that does is tagged nondeterministic_seeded
+class SeededOpDetector(TorchDispatchMode):
+    def __init__(self):
+        super().__init__()
+        self.seeded = False
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        if torch.Tag.nondeterministic_seeded in func.tags:
+            self.seeded = True
+        return func(*args, **(kwargs or {}))
+
+def describe(obj):
+    return (tuple(obj.shape), obj.dtype) if isinstance(obj, torch.Tensor) else obj
 
 class TestVulkanOps(TestCase):
 
@@ -117,8 +133,10 @@ class TestVulkanOps(TestCase):
             if (op.name == "nn.functional.soft_margin_loss" and dtype == torch.float16):
                 continue
 
+            detector = SeededOpDetector()
             try:
-                expected = op(cpu_input, *cpu_args, **cpu_kwargs)
+                with detector:
+                    expected = op(cpu_input, *cpu_args, **cpu_kwargs)
             except Exception:
                 REMAINING_OPS.discard(op.name)
                 expect_exeption = True
@@ -134,6 +152,17 @@ class TestVulkanOps(TestCase):
                 if expect_exeption:
                     continue
                 self.fail(f"Vulkan backend failed on op '{op.name}' with error: {e}")
+
+            # random ops can't reproduce CPU's generator; check the output's structure,
+            # and that seeding the Vulkan generator makes the op repeatable
+            if detector.seeded and not expect_exeption:
+                self.assertEqual(tree_map(describe, actual), tree_map(describe, expected))
+                torch.manual_seed(0)
+                first = to_cpu(op(vk_input, *vk_args, **vk_kwargs))
+                torch.manual_seed(0)
+                second = to_cpu(op(vk_input, *vk_args, **vk_kwargs))
+                self.assertEqual(first, second)
+                continue
 
             # uninitialsied memory cannot be comapred
             if op.name in ("empty", "empty_like", "empty_strided", "new_empty", "new_empty_strided", "empty_permuted"):
@@ -204,8 +233,11 @@ class TestVulkanOps(TestCase):
                 self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
                 continue
 
-            # log_softmax runs through exp/log at float32, so float64 results can't beat ~1e-7
-            elif op.name in ("log_softmax", "masked.log_softmax") and (
+            # softmax and log_softmax run through exp/log at float32, so float64 results can't beat ~1e-7
+            elif op.name in (
+                "softmax", "masked.softmax", "nn.functional.softmin",
+                "log_softmax", "masked.log_softmax",
+            ) and (
                 dtype == torch.float64 or cpu_kwargs.get("dtype") == torch.float64
             ):
                 self.assertEqual(actual, expected, atol=1e-5, rtol=1e-5)

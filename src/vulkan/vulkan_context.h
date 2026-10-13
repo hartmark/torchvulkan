@@ -9,7 +9,7 @@ class VulkanContext {
 public:
     // singleton pattern
     static VulkanContext& Instance();
-    
+
     // delete copy constructors
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
@@ -23,6 +23,7 @@ public:
     uint32_t getDeviceCount() { return devices.size(); }
     bool isStrict() { return isStrict_; }
     bool profilingEnabled() { return enableProfiling_; }
+    static bool IsInBadFork();
 
 private:
     VulkanContext();
@@ -34,6 +35,7 @@ private:
     void createDeviceAllocator();
     void createDeviceCommandPools();
     void validateDevices();
+    void createGenerators();
 
     // minimum Vulkan version
     static constexpr uint32_t apiVersion = VK_API_VERSION_1_3;

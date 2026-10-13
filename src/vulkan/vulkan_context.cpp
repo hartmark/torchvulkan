@@ -1,9 +1,16 @@
 #define VOLK_IMPLEMENTATION
 #include "vulkan_context.h"
+#include "generator.h"
+
+#include <atomic>
 
 #ifdef __APPLE__
 #include <dlfcn.h>
 #include <filesystem>
+#endif
+
+#ifndef _WIN32
+#include <pthread.h>
 #endif
 
 // VK_KHR_shader_bfloat16 is newer than some Vulkan SDKs still in use (1.4.309 lacks
@@ -51,9 +58,29 @@ static VkResult loadVulkan()
     return volkInitialize();
 }
 
+static std::atomic<bool> contextInitialized{false};
+static std::atomic<bool> inBadFork{false};
+
+#ifndef _WIN32
+// a forked child shares the parent's driver state, which is not valid in the child
+static void markForkedChild() { inBadFork = contextInitialized.load(); }
+#endif
+
 VulkanContext& VulkanContext::Instance() 
 {
-    static VulkanContext* vulkanContextInstance = new VulkanContext();
+    TORCH_CHECK(!inBadFork, 
+        "torchvulkan [ERROR]: Cannot use Vulkan in a forked subprocess after the parent process initialised it. "
+        "Use the 'spawn' start method (e.g. multiprocessing_context='spawn' for a DataLoader)."
+    );
+
+    static VulkanContext* vulkanContextInstance = []() {
+#ifndef _WIN32
+        pthread_atfork(nullptr, nullptr, markForkedChild);
+#endif
+        VulkanContext* context = new VulkanContext();
+        contextInitialized = true;
+        return context;
+    }();
     return *vulkanContextInstance;
 }
 
@@ -65,6 +92,7 @@ VulkanContext::VulkanContext()
     createDeviceAllocator();
     createDeviceCommandPools();
     validateDevices();
+    createGenerators();
 }
 
 void VulkanContext::initVulkan()
@@ -468,6 +496,17 @@ void VulkanContext::validateDevices()
 
     devices = std::move(validDevices);
     if (devices.empty()) TORCH_CHECK(false, "torchvulkan [WARNING]: No Vulkan devices could be initialized.");
+}
+
+bool VulkanContext::IsInBadFork()
+{
+    return inBadFork;
+}
+
+void VulkanContext::createGenerators()
+{
+    std::vector<at::Generator> generators = VulkanGeneratorImpl::create_default_generators(devices.size());
+    for (size_t i = 0; i < devices.size(); i++) devices[i]->generator = std::move(generators[i]);
 }
 
 VulkanContext::~VulkanContext() 

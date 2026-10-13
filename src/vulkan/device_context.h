@@ -1,4 +1,5 @@
 #pragma once
+#include <ATen/core/Generator.h>
 #include <c10/core/Device.h>
 #include <volk.h>
 
@@ -19,6 +20,7 @@ struct DeviceContext {
     VkPhysicalDeviceProperties properties{};
     VulkanShaderManager* shader_manager = VK_NULL_HANDLE;
     VulkanCache cache;
+    at::Generator generator;
     bool valid = true;
 
     bool support_float64 = false;
