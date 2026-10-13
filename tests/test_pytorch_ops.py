@@ -233,8 +233,11 @@ class TestVulkanOps(TestCase):
                 self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
                 continue
 
-            # log_softmax runs through exp/log at float32, so float64 results can't beat ~1e-7
-            elif op.name in ("log_softmax", "masked.log_softmax") and (
+            # softmax and log_softmax run through exp/log at float32, so float64 results can't beat ~1e-7
+            elif op.name in (
+                "softmax", "masked.softmax", "nn.functional.softmin",
+                "log_softmax", "masked.log_softmax",
+            ) and (
                 dtype == torch.float64 or cpu_kwargs.get("dtype") == torch.float64
             ):
                 self.assertEqual(actual, expected, atol=1e-5, rtol=1e-5)
