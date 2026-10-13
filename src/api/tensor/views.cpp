@@ -1,6 +1,7 @@
 #include <torch/extension.h>
 #include <ATen/InferSize.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/ops/unfold_native.h>
 #include <c10/core/MemoryFormat.h>
 #include "vulkan/memory.h"
 #include "vulkan/vulkan_context.h"
@@ -126,6 +127,11 @@ at::Tensor permute_vulkan(const at::Tensor& self, c10::IntArrayRef dims)
     return self.as_strided(sizes, strides, self.storage_offset());
 }
 
+at::Tensor unfold_vulkan(const at::Tensor& self, int64_t dimension, int64_t size, int64_t step)
+{
+    return at::native::unfold(self, dimension, size, step);
+}
+
 at::Tensor contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format)
 {
     if (self.is_contiguous(memory_format)) return self;
@@ -144,5 +150,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("t", &t_vulkan);
     m.impl("transpose.int", &transpose_int_vulkan);
     m.impl("permute", &permute_vulkan);
+    m.impl("unfold", &unfold_vulkan);
     m.impl("contiguous", &contiguous_vulkan);
 }
