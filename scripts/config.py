@@ -146,4 +146,7 @@ KERNELS = [
     Kernel('random', 'ops/random.slang', [
         Entry('random_main', DTYPES, ('vec',)),
     ]),
+    Kernel('dropout', 'ops/dropout.slang', [
+        Entry('dropout_main', FLOATS, ('vec',)),
+    ]),
 ]
