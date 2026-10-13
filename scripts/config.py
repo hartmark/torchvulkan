@@ -149,4 +149,7 @@ KERNELS = [
     Kernel('dropout', 'ops/dropout.slang', [
         Entry('dropout_main', FLOATS, ('vec',)),
     ]),
+    Kernel('multinomial', 'ops/multinomial.slang', [
+        Entry('multinomial_main', [F64, F32]),
+    ]),
 ]
