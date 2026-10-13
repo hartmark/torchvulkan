@@ -5,11 +5,15 @@
 #include <c10/core/DefaultDtype.h>
 #include <c10/core/MemoryFormat.h>
 #include <c10/util/strides.h>
+#include <c10/util/Half.h>
+#include <c10/util/BFloat16.h>
 #include <vector>
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
+#include <utility>
 
 inline uint64_t get_tensor_address(const at::Tensor& t) 
 {
@@ -59,6 +63,90 @@ inline int get_dtype_workgroup_size(at::ScalarType dtype, uint32_t vecSize)
     if (bytes == 0 || vecSize == 0) return 1;
     int size = (int)(1024 / (bytes * vecSize)); // max out memory bandwidth
     return size;
+}
+
+inline int get_dtype_digits(at::ScalarType dtype)
+{
+    switch (dtype)
+    {
+        case at::kDouble: return std::numeric_limits<double>::digits;
+        case at::kFloat: return std::numeric_limits<float>::digits;
+        case at::kHalf: return std::numeric_limits<c10::Half>::digits;
+        case at::kBFloat16: return std::numeric_limits<c10::BFloat16>::digits;
+
+        case at::kBool: return std::numeric_limits<bool>::digits;
+        case at::kByte: return std::numeric_limits<uint8_t>::digits;
+        case at::kChar: return std::numeric_limits<int8_t>::digits;
+        case at::kShort: return std::numeric_limits<int16_t>::digits;
+        case at::kUInt16: return std::numeric_limits<uint16_t>::digits;
+        case at::kInt: return std::numeric_limits<int32_t>::digits;
+        case at::kUInt32: return std::numeric_limits<uint32_t>::digits;
+        case at::kLong: return std::numeric_limits<int64_t>::digits;
+        case at::kUInt64: return std::numeric_limits<uint64_t>::digits;
+
+        default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported dtype ", dtype, ".");
+    }
+}
+
+inline std::pair<double, double> get_dtype_limits(at::ScalarType dtype)
+{
+    switch (dtype)
+    {
+        case at::kDouble: return {std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max()};
+        case at::kFloat: return {std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max()};
+        case at::kHalf: return {static_cast<double>(std::numeric_limits<c10::Half>::lowest()), static_cast<double>(std::numeric_limits<c10::Half>::max())};
+        case at::kBFloat16: return {static_cast<double>(std::numeric_limits<c10::BFloat16>::lowest()), static_cast<double>(std::numeric_limits<c10::BFloat16>::max())};
+
+        case at::kBool: return {0, 1};
+        case at::kByte: return {std::numeric_limits<uint8_t>::lowest(), std::numeric_limits<uint8_t>::max()};
+        case at::kChar: return {std::numeric_limits<int8_t>::lowest(), std::numeric_limits<int8_t>::max()};
+        case at::kShort: return {std::numeric_limits<int16_t>::lowest(), std::numeric_limits<int16_t>::max()};
+        case at::kUInt16: return {std::numeric_limits<uint16_t>::lowest(), std::numeric_limits<uint16_t>::max()};
+        case at::kInt: return {std::numeric_limits<int32_t>::lowest(), std::numeric_limits<int32_t>::max()};
+        case at::kUInt32: return {std::numeric_limits<uint32_t>::lowest(), std::numeric_limits<uint32_t>::max()};
+        case at::kLong: return {static_cast<double>(std::numeric_limits<int64_t>::lowest()), static_cast<double>(std::numeric_limits<int64_t>::max())};
+        case at::kUInt64: return {0, static_cast<double>(std::numeric_limits<uint64_t>::max())};
+
+        default: TORCH_CHECK(false, "torchvulkan [ERROR]: Unsupported dtype ", dtype, ".");
+    }
+}
+
+inline double get_dtype_epsilon(at::ScalarType dtype)
+{
+    switch (dtype)
+    {
+        case at::kDouble: return std::numeric_limits<double>::epsilon();
+        case at::kHalf: return static_cast<double>(std::numeric_limits<c10::Half>::epsilon());
+        case at::kBFloat16: return static_cast<double>(std::numeric_limits<c10::BFloat16>::epsilon());
+        default: return std::numeric_limits<float>::epsilon();
+    }
+}
+
+inline double get_dtype_smallest_normal(at::ScalarType dtype)
+{
+    switch (dtype)
+    {
+        case at::kDouble: return std::numeric_limits<double>::min();
+        case at::kHalf: return static_cast<double>(std::numeric_limits<c10::Half>::min());
+        case at::kBFloat16: return static_cast<double>(std::numeric_limits<c10::BFloat16>::min());
+        default: return std::numeric_limits<float>::min();
+    }
+}
+
+inline int64_t round_to_dtype(int64_t value, at::ScalarType dtype)
+{
+    switch (dtype)
+    {
+        case at::kDouble: return static_cast<int64_t>(static_cast<double>(value));
+        case at::kHalf: return static_cast<int64_t>(static_cast<float>(c10::Half(static_cast<float>(value))));
+        case at::kBFloat16: return static_cast<int64_t>(static_cast<float>(c10::BFloat16(static_cast<float>(value))));
+        default: return static_cast<int64_t>(static_cast<float>(value));
+    }
+}
+
+inline void check_floating(const at::Tensor& self, const char* name)
+{
+    TORCH_CHECK_NOT_IMPLEMENTED(at::isFloatingType(self.scalar_type()), name, " is not implemented for '", self.scalar_type(), "'.");
 }
 
 inline std::vector<int64_t> compute_strides(
@@ -111,4 +199,32 @@ inline c10::ScalarType reduce_compute_dtype(const at::Tensor& self, c10::optiona
 inline c10::ScalarType reduce_accumulate_dtype(c10::ScalarType dtype)
 {
     return (dtype == at::kHalf || dtype == at::kBFloat16) ? at::kFloat : dtype;
+}
+
+// the dtype a random kernel samples in: float64 for float64 outputs, float32 otherwise (T.Real in philox.slang)
+inline c10::ScalarType random_real_dtype(c10::ScalarType dtype)
+{
+    return dtype == at::kDouble ? at::kDouble : at::kFloat;
+}
+
+// the dtype a random kernel generates in when the device cannot write `dtype`
+inline c10::ScalarType random_proxy_dtype(c10::ScalarType dtype)
+{
+    if (at::isFloatingType(dtype)) return at::kFloat;
+    return is_dtype_supported(at::kLong) ? at::kLong : at::kInt;
+}
+
+// a parameter packed for IRandomReal.fromBits: a float in the low 32 bits, or a whole double
+inline uint64_t random_real_bits(double value, c10::ScalarType real)
+{
+    if (real == at::kDouble) {
+        uint64_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(double));
+        return bits;
+    }
+
+    float narrowed = static_cast<float>(value);
+    uint32_t bits = 0;
+    std::memcpy(&bits, &narrowed, sizeof(float));
+    return bits;
 }
