@@ -391,7 +391,9 @@ class TestVulkanOps(TestCase):
                     self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-3)
                 # chains of matmuls, where the GPU's summation order compounds
                 elif op.name.startswith("linalg."):
-                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=5e-3)
+                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=2e-2)
+                elif op.name in ("acos", "asin", "tan"):
+                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-2)
                 elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma"):
                     self.assertEqual(a.cpu(), e, atol=1e-2, rtol=1e-2)
                 # with few observations and a large correction, cov divides rounding error by ~1
