@@ -21,6 +21,8 @@ public struct SubgroupReducePushConstants
     public uint64_t numel_out;
     public uint reduce_stride;
     public uint reduce_size;
+    public uint split;
+    public uint chunk;
 }
 
 public interface IWaveReduceOp<T>
@@ -52,16 +54,22 @@ public struct AminWaveOp<T : __BuiltinFloatingPointType> : IWaveReduceOp<T>
 }
 
 public void baseSubgroupReduceKernel<T : __BuiltinFloatingPointType, Op : IWaveReduceOp<T>>(
-    uint out_idx,
+    uint group,
     uint lane,
     uint64_t address_in,
     uint64_t address_out,
     uint64_t address_metadata,
     uint64_t numel_out,
     uint reduce_stride,
-    uint reduce_size)
+    uint reduce_size,
+    uint split,
+    uint chunk)
 {
-    if (out_idx >= numel_out) return;
+    if (uint64_t(group) >= numel_out * split) return;
+
+    uint out_idx = group / split;
+    uint r_begin = (group % split) * chunk;
+    uint r_end = min(reduce_size, r_begin + chunk);
 
     T* tensor_in = (T*)address_in;
     T* tensor_out = (T*)address_out;
@@ -75,20 +83,20 @@ public void baseSubgroupReduceKernel<T : __BuiltinFloatingPointType, Op : IWaveR
     for (uint i = 0; i < NDIM; i++) idx_in += walker.next(i) * strides_in[i];
 
     T acc = Op.identity();
-    for (uint r = lane; r < reduce_size; r += WG_x) acc = Op.combine(acc, tensor_in[idx_in + r * reduce_stride]);
+    for (uint r = r_begin + lane; r < r_end; r += WG_x) acc = Op.combine(acc, tensor_in[idx_in + r * reduce_stride]);
     acc = Op.wave_reduce(acc);
 
-    if (lane == 0) tensor_out[out_idx] = acc;
+    if (lane == 0) tensor_out[group] = acc;
 }
 
 public void dispatchSubgroupReduce<T : __BuiltinFloatingPointType>(
-    uint out_idx, uint lane, SubgroupReducePushConstants pcs)
+    uint group, uint lane, SubgroupReducePushConstants pcs)
 {
     switch (OP_TYPE)
     {
-    case 0: baseSubgroupReduceKernel<T, SumWaveOp<T>>(out_idx, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
-    case 1: baseSubgroupReduceKernel<T, AmaxWaveOp<T>>(out_idx, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
-    case 2: baseSubgroupReduceKernel<T, AminWaveOp<T>>(out_idx, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
+    case 0: baseSubgroupReduceKernel<T, SumWaveOp<T>>(group, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
+    case 1: baseSubgroupReduceKernel<T, AmaxWaveOp<T>>(group, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
+    case 2: baseSubgroupReduceKernel<T, AminWaveOp<T>>(group, lane, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
     default: break;
     }
 }

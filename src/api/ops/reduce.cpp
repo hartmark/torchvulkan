@@ -60,53 +60,57 @@ at::Tensor dispatch_reduce_shader(
         reduce_size >= static_cast<int64_t>(device->subgroup_size) &&
         numel_out <= static_cast<uint64_t>(device->properties.limits.maxComputeWorkGroupCount[0]);
 
-    uint32_t workgroupSizeX = use_subgroup
-        ? device->subgroup_size
-        : get_dtype_workgroup_size(self.scalar_type(), 1);
+    uint32_t workgroupSizeX = use_subgroup ? device->subgroup_size : get_dtype_workgroup_size(stype, 1, device);
+
+    static constexpr uint64_t TARGET_ITEMS = 1u << 14;
+    static constexpr uint64_t MIN_CHUNK = 1024;
+    
+    uint64_t split = 1;
+    if (numel_out < TARGET_ITEMS && static_cast<uint64_t>(reduce_size) >= 2 * MIN_CHUNK) {
+        split = std::min<uint64_t>((TARGET_ITEMS + numel_out - 1) / numel_out, static_cast<uint64_t>(reduce_size) / MIN_CHUNK);
+    }
+    uint32_t chunk = static_cast<uint32_t>((reduce_size + split - 1) / split);
+    split = (reduce_size + chunk - 1) / chunk; // every chunk non-empty
+
+    at::Tensor partial = split == 1 ? out : at::empty({static_cast<int64_t>(numel_out), static_cast<int64_t>(split)}, self.options());
+
     torchvulkan::Kernel kernel = use_subgroup ? torchvulkan::Kernel::REDUCE_SUBGROUP : torchvulkan::Kernel::REDUCE;
-    ShaderKey shader_key{kernel, self.scalar_type()};
+    int32_t ndim32 = static_cast<int32_t>(ndim);
 
     SpecializationBuilder spd{};
-    spd.push(op)
+    spd.push(static_cast<uint32_t>(operation))
        .push(ndim32)
        .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    for (int64_t i = 0; i < reduce_ndim; i++) {
-        int64_t actual_dim = reduce_ndim - 1 - i;
-        sizes.set(i, static_cast<uint32_t>(out_sizes[actual_dim]));
-        strides_in[i] = static_cast<uint32_t>(self_strides[actual_dim]);
-    }
-
-    MetadataBuilder metadataBuilder{};
-    metadataBuilder.push(sizes, ndim32)
-                   .push_array(strides_in, ndim32);
+    MetadataBuilder metadataBuilder = get_shape_metadata(out_sizes, {self.strides()});
     Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(self))
-       .push(get_tensor_address(out))
-       .push(device->shader_manager->registerMetadata(metadata))
+       .push(get_tensor_address(partial))
+       .push_metadata(&metadata)
        .push(numel_out)
-       .push(static_cast<uint32_t>(self_strides[dim]))
-       .push(static_cast<uint32_t>(reduce_size));
+       .push(static_cast<uint32_t>(self.stride(dim)))
+       .push(static_cast<uint32_t>(reduce_size))
+       .push(static_cast<uint32_t>(split))
+       .push(chunk);
 
-    uint32_t groupX = use_subgroup
-        ? static_cast<uint32_t>(numel_out)
-        : static_cast<uint32_t>((numel_out + (workgroupSizeX - 1)) / workgroupSizeX);
+    uint64_t work_items = numel_out * split;
+    uint32_t groupX = use_subgroup ? static_cast<uint32_t>(work_items) : get_group_count(work_items, workgroupSizeX);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
     device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
+        ShaderKey{kernel, stype},
+        spd.build(),
+        pcs.build(),
         /* read = */ {self},
-        /* write = */ {out},
+        /* write = */ {partial},
         groupX, 1, 1
     );
 
+    if (split > 1) {
+        at::Tensor folded = dispatch_reduce_shader(partial, 1, false, operation, empty_value, has_subgroup);
+        out = folded.view(out_sizes);
+    }
     return keepdim ? out : out.squeeze(dim);
 }
 
