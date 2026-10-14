@@ -1,4 +1,10 @@
+import os
 import re
+import subprocess
+import sys
+import tempfile
+import textwrap
+import threading
 import pytest
 import torch
 import torchvulkan as torchvk
@@ -7,9 +13,9 @@ from torch.testing._internal.common_utils import TestCase, run_tests
 from torch.testing._internal.common_device_type import instantiate_device_type_tests, ops
 from torch.testing._internal.common_methods_invocations import op_db
 from torch.utils._python_dispatch import TorchDispatchMode
-from torch.utils._pytree import tree_map
+from torch.utils._pytree import tree_flatten, tree_map
 
-# all the datatypes we garantee to be supported by torchvk
+# all the datatypes we guarantee to be supported by torchvk
 VULKAN_DTYPES = [
     torch.float64, torch.uint64, torch.int64,
     torch.float32, torch.uint32, torch.int32,
@@ -34,31 +40,39 @@ def to_cpu(obj):
         return {k: to_cpu(v) for k, v in obj.items()}
     return obj
 
-def is_not_implemented(exception: str):
+def unimplemented_reason(exception: str):
+    """
+    Why an error means the backend can't run the op yet (so the sample is skipped), or None if the
+    error is a real failure. Only the backend's own fallback errors count: other "not implemented"
+    messages (e.g. an op not supporting a dtype) are compared against the CPU like any other error.
+    """
     low = exception.lower()
 
-    if "not implemented" in low:
-        # strict-mode message: "... fallback detected for operation: aten::<op>. Set ..."
+    # strict-mode message: "torchvulkan [NOT IMPLEMENTED]: ... fallback detected for operation: aten::<op>. Set ..."
+    if "torchvulkan [not implemented]" in low:
         m = re.search(r"operation:\s*(aten::\S+?)\.?\s+Set", exception)
-        op_name = m.group(1) if m else exception.split(' ')[-1]
-        UNIMPLEMENTED_OPS[op_name] = UNIMPLEMENTED_OPS.get(op_name, 0) + 1
-        return True
+        return m.group(1) if m else "torchvulkan [NOT IMPLEMENTED]"
 
-    elif "could not run" in low and "backend" in low:
-        op_name = exception.split("'")[1] if "'" in exception else "unknown"
-        UNIMPLEMENTED_OPS[op_name] = UNIMPLEMENTED_OPS.get(op_name, 0) + 1
-        return True
+    if "could not run" in low and "backend" in low:
+        return exception.split("'")[1] if "'" in exception else "unknown"
 
-    elif "to be on cpu, but it's on vulkan" in low: # for now, we just skip tests where values are on the wrong device
-        return True
+    # torch's own error for an op with no kernel outside CPU/CUDA (convolution, until the backend has one)
+    if "you are likely triggering this with tensor backend other than cpu/cuda" in low:
+        return exception.split(" ")[0]
+
+    # an output left on the wrong device by a fallback; these show up as skips, so watch the skip count
+    if "to be on cpu, but it's on vulkan" in low:
+        return "wrong_device_output"
 
     # structured/linalg ops (solve, matrix_rank, ...) whose CPU fallback splits tensors across
     # cpu and vulkan; torch 2.13 tightened these device checks, so the backend can't run them
-    elif "same device" in low or "multi-device" in low:
-        UNIMPLEMENTED_OPS["multi_device_fallback"] = UNIMPLEMENTED_OPS.get("multi_device_fallback", 0) + 1
-        return True
+    if "same device" in low or "multi-device" in low:
+        return "multi_device_fallback"
 
-    return False
+    return None
+
+def record_unimplemented(reason):
+    UNIMPLEMENTED_OPS[reason] = UNIMPLEMENTED_OPS.get(reason, 0) + 1
 
 # records whether an op draws random numbers: every aten op that does is tagged nondeterministic_seeded
 class SeededOpDetector(TorchDispatchMode):
@@ -74,6 +88,24 @@ class SeededOpDetector(TorchDispatchMode):
 def describe(obj):
     return (tuple(obj.shape), obj.dtype) if isinstance(obj, torch.Tensor) else obj
 
+def tensors_of(obj):
+    return [t for t in tree_flatten(obj)[0] if isinstance(t, torch.Tensor)]
+
+MATMUL_OPS = ("bmm", "baddbmm", "mm", "addmm", "matmul", "__rmatmul__")
+
+def tie_order_dim(op_name, args, kwargs):
+    """
+    The dim for ops whose order of equal keys is unspecified (sort/argsort without stable=True, topk), where
+    the CPU's own order is arbitrary, or None for every other op.
+    """
+    if op_name in ("sort", "argsort"):
+        if kwargs.get("stable", False):
+            return None
+        return kwargs.get("dim", args[0] if len(args) > 0 else -1)
+    if op_name == "topk":
+        return kwargs.get("dim", args[1] if len(args) > 1 else -1)
+    return None
+
 class TestVulkanOps(TestCase):
 
     @ops(op_db, allowed_dtypes=VULKAN_DTYPES)
@@ -86,22 +118,19 @@ class TestVulkanOps(TestCase):
         if "sparse_sampled_addmm" in self._testMethodName:
             self.skipTest("Sparse CSR layout is not supported by the Vulkan backend.")
 
-        # fp16 fmod/remainder reduce a/b through a float32 trunc/floor; for a tiny divisor the
-        # exact quotient exceeds float32's integer range, so a boundary element can differ from
-        # the exact CPU reference by a full divisor (fp32/fp64 stay exact enough)
-        if op.name in ("fmod", "remainder", "__rmod__") and dtype == torch.float16:
-            self.skipTest("fp16 fmod/remainder is ill-conditioned for tiny divisors.")
-
-        print(f"\nDEBUG: Attempting op '{op.name}' with dtype {dtype}: ", flush=True, end='')
-
-        # samples are now generated directly on the vulkan device; an unimplemented op used
+        # samples are generated directly on the vulkan device; an unimplemented op used
         # while constructing the inputs should skip the test rather than error it out
         try:
             samples = list(op.sample_inputs(device, dtype))
         except Exception as e:
-            if is_not_implemented(str(e)):
-                self.skipTest(f"Sample generation for '{op.name}' needs an unimplemented Vulkan op.")
+            reason = unimplemented_reason(str(e))
+            if reason is not None:
+                record_unimplemented(reason)
+                self.skipTest(f"Sample generation for '{op.name}' needs an unimplemented Vulkan op ({reason}).")
             raise
+
+        compared = 0
+        skipped_reason = None
 
         for sample in samples:
             vk_input = sample.input
@@ -112,7 +141,6 @@ class TestVulkanOps(TestCase):
             cpu_input = to_cpu(vk_input)
             cpu_args = to_cpu(vk_args)
             cpu_kwargs = to_cpu(vk_kwargs)
-            expect_exeption = False
 
             # torch 2.10's group_norm errors on an empty-batch input when it
             # round-trips through the Vulkan CPU fallback
@@ -134,28 +162,34 @@ class TestVulkanOps(TestCase):
                 continue
 
             detector = SeededOpDetector()
+            cpu_error = None
             try:
                 with detector:
                     expected = op(cpu_input, *cpu_args, **cpu_kwargs)
-            except Exception:
-                REMAINING_OPS.discard(op.name)
-                expect_exeption = True
+            except Exception as e:
+                cpu_error = e
 
             try:
-                actual = op(vk_input, *vk_args, **vk_kwargs)
-                actual = to_cpu(actual) # torchvk will only compute on this step
+                actual_vk = op(vk_input, *vk_args, **vk_kwargs)
+                actual = to_cpu(actual_vk) # torchvk will only compute on this step
             except Exception as e:
-                REMAINING_OPS.discard(op.name)
-                if is_not_implemented(str(e)):
-                    self.skipTest(f"Operator '{op.name}' is not implemented for Vulkan backend.")
+                reason = unimplemented_reason(str(e))
+                if reason is not None:
+                    record_unimplemented(reason)
+                    skipped_reason = reason
                     continue
-                if expect_exeption:
-                    continue
+                if cpu_error is not None:
+                    continue  # both backends rejected the input
                 self.fail(f"Vulkan backend failed on op '{op.name}' with error: {e}")
+
+            if cpu_error is not None:
+                self.fail(f"Vulkan backend accepted an input that the CPU rejects for op '{op.name}': {type(cpu_error).__name__}: {cpu_error}")
+
+            compared += 1
 
             # random ops can't reproduce CPU's generator; check the output's structure,
             # and that seeding the Vulkan generator makes the op repeatable
-            if detector.seeded and not expect_exeption:
+            if detector.seeded:
                 self.assertEqual(tree_map(describe, actual), tree_map(describe, expected))
                 torch.manual_seed(0)
                 first = to_cpu(op(vk_input, *vk_args, **vk_kwargs))
@@ -164,14 +198,31 @@ class TestVulkanOps(TestCase):
                 self.assertEqual(first, second)
                 continue
 
-            # uninitialsied memory cannot be comapred
+            # torch returns matmul results contiguous, and code relies on it (e.g. .view()); a padded
+            # cooperative-matrix result once came back as a strided view
+            if op.name in MATMUL_OPS:
+                for vk_tensor, cpu_tensor in zip(tensors_of(actual_vk), tensors_of(expected)):
+                    if cpu_tensor.is_contiguous():
+                        self.assertTrue(vk_tensor.is_contiguous(), f"'{op.name}' returned a non-contiguous tensor where the CPU's is contiguous")
+
+            # equal keys may come out in any order: the values must match, and the indices must point at them
+            tie_dim = tie_order_dim(op.name, cpu_args, cpu_kwargs)
+            if tie_dim is not None and isinstance(cpu_input, torch.Tensor) and cpu_input.dim() > 0:
+                if op.name == "argsort":
+                    actual_indices, expected_values = actual, cpu_input.gather(tie_dim, expected)
+                else:
+                    (actual_values, actual_indices), (expected_values, _) = actual, expected
+                    self.assertEqual(actual_values, expected_values)
+                self.assertEqual(cpu_input.gather(tie_dim, actual_indices), expected_values)
+                continue
+
+            # uninitialised memory cannot be compared
             if op.name in ("empty", "empty_like", "empty_strided", "new_empty", "new_empty_strided", "empty_permuted"):
                 self.assertEqual(actual.shape, expected.shape)
                 self.assertEqual(actual.dtype, expected.dtype)
                 continue
 
-            elif dtype in (torch.float16, torch.bfloat16) and op.name in (
-                "bmm", "baddbmm", "mm", "addmm", "matmul", "__rmatmul__",
+            elif dtype in (torch.float16, torch.bfloat16) and op.name in MATMUL_OPS + (
                 "linalg.multi_dot", "nn.functional.embedding_bag",
             ):
                 self.assertEqual(actual, expected, atol=1e-1, rtol=3e-1)
@@ -179,8 +230,7 @@ class TestVulkanOps(TestCase):
 
             # GPU matmul accumulates in a different order than the CPU reference;
             # the same holds for composite ops that decompose into matmuls.
-            elif dtype == torch.float32 and op.name in (
-                "bmm", "baddbmm", "mm", "addmm", "matmul", "__rmatmul__",
+            elif dtype == torch.float32 and op.name in MATMUL_OPS + (
                 "nn.functional.multi_head_attention_forward",
                 "nn.functional.scaled_dot_product_attention", "pca_lowrank",
             ):
@@ -221,7 +271,7 @@ class TestVulkanOps(TestCase):
 
             # special functions use float32 polynomial/rational approximations; the Bessel and
             # gamma families lose accuracy for large arguments even in float32
-            elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv"):
+            elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma"):
                 self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
                 continue
 
@@ -260,7 +310,98 @@ class TestVulkanOps(TestCase):
                 continue
 
             self.assertEqual(actual, expected)
+
+        if compared == 0 and skipped_reason is not None:
+            self.skipTest(f"Operator '{op.name}' is not implemented for Vulkan backend ({skipped_reason}).")
+        if skipped_reason is None:
             REMAINING_OPS.add(op.name)
+
+    # backward passes: gradients of the sum of every floating output, against the CPU's
+    @ops([op for op in op_db if op.supports_autograd], allowed_dtypes=[torch.float32])
+    def test_gradients(self, device, dtype, op):
+        if "as_strided_partial_views" in self._testMethodName:
+            self.skipTest("Cross-device storage copy loses unreferenced base memory.")
+        if "sparse_sampled_addmm" in self._testMethodName:
+            self.skipTest("Sparse CSR layout is not supported by the Vulkan backend.")
+
+        try:
+            samples = list(op.sample_inputs(device, dtype, requires_grad=True))
+        except Exception as e:
+            reason = unimplemented_reason(str(e))
+            if reason is not None:
+                record_unimplemented(reason)
+                self.skipTest(f"Sample generation for '{op.name}' needs an unimplemented Vulkan op ({reason}).")
+            raise
+
+        compared = 0
+        skipped_reason = None
+
+        for sample in samples:
+            vk_leaves = [t for t in tensors_of((sample.input, sample.args, sample.kwargs)) if t.requires_grad]
+            if not vk_leaves:
+                continue
+
+            # CPU leaves standing in for the Vulkan ones, so each side's graph is its own
+            cpu_leaf = {id(t): t.detach().cpu().requires_grad_(True) for t in vk_leaves}
+            def as_cpu(obj):
+                if isinstance(obj, torch.Tensor):
+                    return cpu_leaf[id(obj)] if id(obj) in cpu_leaf else obj.detach().cpu()
+                return to_cpu(obj) if not isinstance(obj, (list, tuple, dict)) else tree_map(as_cpu, obj)
+            cpu_input, cpu_args, cpu_kwargs = as_cpu(sample.input), tree_map(as_cpu, sample.args), tree_map(as_cpu, sample.kwargs)
+
+            def grads_of(fn_args, leaves):
+                with SeededOpDetector() as detector:
+                    out = op(*fn_args[0], **fn_args[1])
+                outputs = [o for o in tensors_of(out) if o.requires_grad and o.is_floating_point()]
+                if not outputs or detector.seeded:
+                    return None
+                loss = sum(o.sum() for o in outputs)
+                return torch.autograd.grad(loss, leaves, allow_unused=True)
+
+            cpu_error = None
+            try:
+                expected = grads_of(((cpu_input, *cpu_args), cpu_kwargs), [cpu_leaf[id(t)] for t in vk_leaves])
+            except Exception as e:
+                cpu_error = e
+
+            try:
+                actual = grads_of(((sample.input, *sample.args), sample.kwargs), vk_leaves)
+            except Exception as e:
+                reason = unimplemented_reason(str(e))
+                if reason is not None:
+                    record_unimplemented(reason)
+                    skipped_reason = reason
+                    continue
+                if cpu_error is not None:
+                    continue
+                self.fail(f"Vulkan backward failed on op '{op.name}' with error: {e}")
+
+            if cpu_error is not None or expected is None or actual is None:
+                continue
+
+            compared += 1
+            for a, e in zip(actual, expected):
+                # autograd may leave an input's gradient as None where the other side computes zeros
+                if a is None or e is None:
+                    present = e if a is None else a.cpu()
+                    if present is not None:
+                        self.assertEqual(present, torch.zeros_like(present))
+                    continue
+                if op.name in MATMUL_OPS or "attention" in op.name or "linear" in op.name or "conv" in op.name:
+                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-3)
+                # chains of matmuls, where the GPU's summation order compounds
+                elif op.name.startswith("linalg."):
+                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=5e-3)
+                elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma"):
+                    self.assertEqual(a.cpu(), e, atol=1e-2, rtol=1e-2)
+                # with few observations and a large correction, cov divides rounding error by ~1
+                elif op.name in ("cov", "corrcoef"):
+                    self.assertEqual(a.cpu(), e, atol=5e-3, rtol=1e-3)
+                else:
+                    self.assertEqual(a.cpu(), e, atol=1e-4, rtol=1e-3)
+
+        if compared == 0 and skipped_reason is not None:
+            self.skipTest(f"Backward of '{op.name}' is not implemented for Vulkan backend ({skipped_reason}).")
 
     @classmethod
     def tearDownClass(cls):
@@ -273,6 +414,13 @@ class TestVulkanOps(TestCase):
 # run the OpInfo suite directly on the vulkan (PrivateUse1) device: inputs are generated
 # on-device via the RNG fills, exactly how a real user drives the backend
 instantiate_device_type_tests(TestVulkanOps, globals(), only_for='privateuse1')
+
+
+def run_script(source, env=None):
+    """runs `source` in a fresh interpreter, outside this process's Vulkan state"""
+    return subprocess.run([sys.executable, "-c", textwrap.dedent(source)], capture_output=True, text=True,
+                          env={**os.environ, **(env or {})}, timeout=300)
+
 
 if __name__ == '__main__':
     run_tests()
