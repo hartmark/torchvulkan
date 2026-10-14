@@ -63,9 +63,13 @@ private:
     size_t key_size_ = 0;
 };
 
+struct Metadata;
+
 struct PushConstants {
-    void* data;
+    const void* data;
     size_t size;
+    const Metadata* metadata = nullptr;
+    size_t metadata_offset = 0;
 };
 
 class PushConstantBuilder {
@@ -116,14 +120,25 @@ public:
         return *this;
     }
 
-    const void* data() const { return buffer.data(); }
+    PushConstantBuilder& push_metadata(const Metadata* metadata)
+    {
+        if (metadata != nullptr) {
+            TORCH_CHECK(metadata_ == nullptr, "torchvulkan [ERROR]: A kernel can only take one metadata block.");
+            metadata_ = metadata;
+            metadata_offset_ = current_size;
+        }
+        return push(uint64_t(0));
+    }
 
-    // vkCmdPushConstants requires a multiple of 4 bytes; the padding bytes are zero
+    const void* data() const { return buffer.data(); }
     size_t size() const { return (current_size + 3) & ~size_t(3); }
+    PushConstants build() const { return {buffer.data(), size(), metadata_, metadata_offset_}; }
 
 private:
     std::array<uint8_t, MAX_PUSH_CONSTANT_BYTES> buffer{}; // vulkan guarantees at least 128 bytes of push constant space on all devices
     size_t current_size = 0;
+    const Metadata* metadata_ = nullptr;
+    size_t metadata_offset_ = 0;
 };
 
 struct IntDivider 
@@ -157,7 +172,7 @@ struct IntDivider
 };
 
 struct Metadata {
-    void* data;
+    const void* data;
     size_t size;
     uint32_t count;
 };
@@ -186,8 +201,7 @@ public:
     { 
         current_size = (current_size + 7) & ~size_t(7); // the address tensor holds 8 byte entries
         append(offsets.data(), count * sizeof(uint64_t));
-
-        return {(void*)buffer.data(), current_size, count}; 
+        return {buffer.data(), current_size, count}; 
     }
 
 private:

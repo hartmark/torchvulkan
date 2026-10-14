@@ -1,17 +1,19 @@
 #include "shader.h"
-#include "shaders/shader_registry.h"
-#include "cache.h"
+#include "generated/shader_registry.h"
 #include "allocator.h"
 #include "vulkan_context.h"
 #include <algorithm>
-#include <iterator>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 
 namespace {
 
 constexpr size_t NUM_SCALAR_TYPES = static_cast<size_t>(c10::ScalarType::NumOptions);
-constexpr size_t NUM_BINARIES = std::size(torchvulkan::SHADER_BINARIES);
 
 size_t keySlot(torchvulkan::Kernel kernel, c10::ScalarType dtype, c10::ScalarType dtype2)
 {
@@ -23,164 +25,188 @@ size_t keySlot(torchvulkan::Kernel kernel, c10::ScalarType dtype, c10::ScalarTyp
 
 } // namespace
 
-VulkanShaderManager::~VulkanShaderManager()
-{
-    clearCache();
-    delete metadata_buffer;
-    delete dispatcher;
-}
-
 VulkanShaderManager::VulkanShaderManager(DeviceContext* device)
-    : device(device)
+    : device(device), dispatcher(device)
 {
-    dispatcher = new DAGDispatcher(device);
-
     binaryIndex.assign(static_cast<size_t>(torchvulkan::Kernel::COUNT) * NUM_SCALAR_TYPES * NUM_SCALAR_TYPES, -1);
-    for (const torchvulkan::ShaderIndexEntry& entry : torchvulkan::SHADER_INDEX) {
+    for (size_t i = 0; i < torchvulkan::NUM_SHADER_INDEX; i++) {
+        const torchvulkan::ShaderIndexEntry& entry = torchvulkan::SHADER_INDEX[i];
         binaryIndex[keySlot(entry.kernel, entry.dtype, entry.dtype2)] = static_cast<int32_t>(entry.binary);
     }
 
-    shaderCache.resize(NUM_BINARIES);
-    shaderModuleCache.assign(NUM_BINARIES, VK_NULL_HANDLE);
+    shaderCache.resize(torchvulkan::NUM_SHADER_BINARIES);
+    shaderModuleCache.assign(torchvulkan::NUM_SHADER_BINARIES, VK_NULL_HANDLE);
 
-    metadata_buffer = new VulkanBuffer(device->allocator, device->device);
+    metadata_buffer = std::make_unique<VulkanBuffer>(device);
     VkResult result = metadata_buffer->createBuffer(METADATA_BUFFER_SIZE, MemoryUsage::HOST_TO_DEVICE);
-    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to allocate metadata buffer.");
-    metadata_base_ptr = metadata_buffer->data();
-    metadata_offset = 0;
+    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to allocate the metadata buffer.");
+
+    VkPushConstantRange pushConstant{};
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushConstant.offset = 0;
+    pushConstant.size = MAX_PUSH_CONSTANT_BYTES;
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
+    VK_CHECK(device->device_table.vkCreatePipelineLayout(device->device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
+
+    createPipelineCache();
+}
+
+VulkanShaderManager::~VulkanShaderManager()
+{
+    clearCache();
 }
 
 uint64_t VulkanShaderManager::registerMetadata(const Metadata& metadata)
 {
+    // assume active mutex
     metadata_offset = (metadata_offset + 7) & ~uint64_t(7);
-    if (metadata_offset + metadata.size > METADATA_BUFFER_SIZE) flush();
+    if (metadata_offset + metadata.size > METADATA_BUFFER_SIZE) submit();
 
     uint64_t block_offset = metadata_offset;
-    uint8_t* block = static_cast<uint8_t*>(metadata_base_ptr) + block_offset;
-    memcpy(block, metadata.data, metadata.size);
+    uint8_t* block = static_cast<uint8_t*>(metadata_buffer->data()) + block_offset;
+    std::memcpy(block, metadata.data, metadata.size);
     metadata_offset += metadata.size;
 
+    // the trailing table holds each section's offset in the block; turn those into device addresses
     size_t table_offset = metadata.size - metadata.count * sizeof(uint64_t);
     const uint64_t* offsets = reinterpret_cast<const uint64_t*>(static_cast<const uint8_t*>(metadata.data) + table_offset);
 
     uint64_t addresses[MAX_METADATA_SECTIONS] = {0};
     for (uint32_t i = 0; i < metadata.count; i++) addresses[i] = metadata_buffer->bufferAddress() + block_offset + offsets[i];
-    memcpy(block + table_offset, addresses, metadata.count * sizeof(uint64_t));
+    std::memcpy(block + table_offset, addresses, metadata.count * sizeof(uint64_t));
 
     return metadata_buffer->bufferAddress() + block_offset + table_offset;
 }
 
 void VulkanShaderManager::flush()
 {
+    std::lock_guard<std::mutex> lock(record_mutex_);
+    submit();
+}
+
+void VulkanShaderManager::flushAndReleaseBuffers()
+{
+    std::lock_guard<std::mutex> lock(record_mutex_);
+    submit();
+    device->cache.releaseBuffers();
+}
+
+void VulkanShaderManager::submit()
+{
+    // assume active mutex
     if (metadata_offset > 0) metadata_buffer->flush();
     metadata_offset = 0;
     if (operations.empty()) return;
 
-    dispatcher->dispatch(operations);
-
-    for (OpInfo* op : operations)
-    {
-        for (MemoryRange* range : op->inputs) delete range;
-        for (MemoryRange* range : op->outputs) delete range;
-        delete op;
-    }
+    std::vector<std::unique_ptr<OpInfo>> batch = std::move(operations);
+    std::vector<VulkanBuffer*> release = std::move(release_after_flush);
     operations.clear();
-
+    release_after_flush.clear();
     pending_buffers.clear();
     pending_bytes = 0;
+
+    // if this throws the GPU may still be using the staging buffers, so they are leaked rather than reused
+    dispatcher.dispatch(batch);
+
+    for (VulkanBuffer* buffer : release) device->cache.deleteBuffer(buffer);
 }
 
 void VulkanShaderManager::dispatchShader(
     ShaderKey key,
-    SpecializationArgs specConstants,
-    PushConstants pushConstants,
+    const SpecializationArgs& specConstants,
+    const PushConstants& pushConstants,
     at::TensorList readTensors,
     at::TensorList writeTensors,
     uint32_t groupX, uint32_t groupY, uint32_t groupZ)
 {
-    std::vector<MemoryRange*> inputs;
-    inputs.reserve(readTensors.size());
-    for (const at::Tensor& in : readTensors)
-    {
-        MemoryRange* range = new MemoryRange{
-            reinterpret_cast<uint64_t>(in.storage().data_ptr().get_context()),
-            static_cast<size_t>(in.storage_offset() * in.element_size()),
-            in.nbytes()
-        };
-        inputs.push_back(range);
-    }
-
-    std::vector<MemoryRange*> outputs;
-    outputs.reserve(writeTensors.size());
-    for (const at::Tensor& out : writeTensors)
-    {
-        MemoryRange* range = new MemoryRange{
-            reinterpret_cast<uint64_t>(out.storage().data_ptr().get_context()),
-            static_cast<size_t>(out.storage_offset() * out.element_size()),
-            out.nbytes()
-        };
-        outputs.push_back(range);
-    }
-
-    ShaderSubmitInfo* submit = allocateShader(resolveBinary(key), specConstants);
-
-    OpInfo* info = new OpInfo{};
-    info->type = OpType::COMPUTE;
-    info->pipeline = submit->pipeline;
-    info->pipelineLayout = submit->pipelineLayout;
-
+    const VkPhysicalDeviceLimits& limits = device->properties.limits;
+    TORCH_CHECK(groupX <= limits.maxComputeWorkGroupCount[0] && groupY <= limits.maxComputeWorkGroupCount[1] && groupZ <= limits.maxComputeWorkGroupCount[2],
+        "torchvulkan [ERROR]: ", torchvulkan::KERNEL_NAMES[static_cast<size_t>(key.kernel)], " needs ", groupX, " x ", groupY, " x ", groupZ,
+        " workgroups, but the device allows at most ", limits.maxComputeWorkGroupCount[0], " x ", limits.maxComputeWorkGroupCount[1], " x ",
+        limits.maxComputeWorkGroupCount[2], "."
+    );
     TORCH_CHECK(pushConstants.size <= MAX_PUSH_CONSTANT_BYTES, "torchvulkan [ERROR]: Push constants exceeded ", MAX_PUSH_CONSTANT_BYTES, " bytes!");
-    
-    info->pushConstantSize = pushConstants.size;
-    if (pushConstants.size > 0) memcpy(info->pushConstantData.data(), pushConstants.data, pushConstants.size);
-    
-    info->groupX = groupX; info->groupY = groupY; info->groupZ = groupZ;
-    info->inputs = std::move(inputs);
-    info->outputs = std::move(outputs);
-    operations.push_back(info);
 
-    for (const MemoryRange* range : info->inputs) trackPending(range);
-    for (const MemoryRange* range : info->outputs) trackPending(range);
+    uint32_t binary = resolveBinary(key);
+    ShaderSubmitInfo submit = allocateShader(binary, specConstants);
+
+    auto info = std::make_unique<OpInfo>();
+    info->type = OpType::COMPUTE;
+    info->pipeline = submit.pipeline;
+    info->pipelineLayout = submit.pipelineLayout;
+    info->groupX = groupX;
+    info->groupY = groupY;
+    info->groupZ = groupZ;
+    info->pushConstantSize = pushConstants.size;
+    if (pushConstants.size > 0) std::memcpy(info->pushConstantData.data(), pushConstants.data, pushConstants.size);
+
+    auto range_of = [](const at::Tensor& t) 
+    {
+        return MemoryRange{
+            reinterpret_cast<uint64_t>(t.storage().data_ptr().get_context()),
+            static_cast<size_t>(t.storage_offset() * t.element_size()),
+            t.nbytes()
+        };
+    };
+
+    info->inputs.reserve(readTensors.size());
+    for (const at::Tensor& in : readTensors) info->inputs.push_back(range_of(in));
+    info->outputs.reserve(writeTensors.size());
+    for (const at::Tensor& out : writeTensors) info->outputs.push_back(range_of(out));
+
+    std::lock_guard<std::mutex> lock(record_mutex_);
+    if (pushConstants.metadata != nullptr) {
+        uint64_t address = registerMetadata(*pushConstants.metadata);
+        std::memcpy(info->pushConstantData.data() + pushConstants.metadata_offset, &address, sizeof(address));
+    }
+
+    for (const MemoryRange& range : info->inputs) trackPending(range);
+    for (const MemoryRange& range : info->outputs) trackPending(range);
+    operations.push_back(std::move(info));
     flushIfPending();
 }
 
-void VulkanShaderManager::trackPending(const MemoryRange* range)
+void VulkanShaderManager::trackPending(const MemoryRange& range)
 {
-    if (range->base_addr == 0) return; // an empty tensor has no buffer behind it
-    if (!pending_buffers.insert(range->base_addr).second) return;
+    // assume active mutex
+    if (range.base_addr == 0) return; // an empty tensor has no buffer behind it
+    if (!pending_buffers.insert(range.base_addr).second) return;
 
-    pending_bytes += reinterpret_cast<VulkanBuffer*>(range->base_addr)->size();
-}
-
-size_t VulkanShaderManager::flushThreshold() const
-{
-    return std::max(globalVulkanAllocator.vram_budget() / 4, MIN_PENDING_BYTES_FLUSH_THRESHOLD);
+    pending_bytes += reinterpret_cast<VulkanBuffer*>(range.base_addr)->size();
 }
 
 void VulkanShaderManager::flushIfPending()
 {
-    if (pending_bytes > flushThreshold() || operations.size() >= MAX_PENDING_OPS) flush();
+    // assume active mutex
+    bool too_many_bytes = pending_bytes > MIN_PENDING_BYTES_FLUSH_THRESHOLD && pending_bytes > device->memoryBudget() / 4;
+    if (too_many_bytes || operations.size() >= MAX_PENDING_OPS) submit();
 }
 
 void VulkanShaderManager::dispatchCopy(
     VulkanBuffer* src, uint64_t srcOffset,
     VulkanBuffer* dst, uint64_t dstOffset,
-    size_t count)
+    size_t count,
+    VulkanBuffer* release_after)
 {
-    OpInfo* info = new OpInfo{};
+    auto info = std::make_unique<OpInfo>();
     info->type = OpType::COPY;
     info->srcBuffer = src->buffer();
     info->dstBuffer = dst->buffer();
     info->region.srcOffset = srcOffset;
     info->region.dstOffset = dstOffset;
     info->region.size = count;
+    info->inputs.push_back(MemoryRange{reinterpret_cast<uint64_t>(src), srcOffset, count});
+    info->outputs.push_back(MemoryRange{reinterpret_cast<uint64_t>(dst), dstOffset, count});
 
-    info->inputs.push_back(new MemoryRange{reinterpret_cast<uint64_t>(src), srcOffset, count});
-    info->outputs.push_back(new MemoryRange{reinterpret_cast<uint64_t>(dst), dstOffset, count});
-    operations.push_back(info);
-
-    for (const MemoryRange* range : info->inputs) trackPending(range);
-    for (const MemoryRange* range : info->outputs) trackPending(range);
+    std::lock_guard<std::mutex> lock(record_mutex_);
+    for (const MemoryRange& range : info->inputs) trackPending(range);
+    for (const MemoryRange& range : info->outputs) trackPending(range);
+    operations.push_back(std::move(info));
+    if (release_after != nullptr) release_after_flush.push_back(release_after);
     flushIfPending();
 }
 
@@ -196,17 +222,17 @@ uint32_t VulkanShaderManager::resolveBinary(ShaderKey key) const
     TORCH_CHECK(false, "torchvulkan [ERROR]: no ", kernel, " shader was compiled for ", key.dtype, " -> ", key.dtype2, ".");
 }
 
-ShaderSubmitInfo* VulkanShaderManager::allocateShader(uint32_t binary, const SpecializationArgs spec)
+ShaderSubmitInfo VulkanShaderManager::allocateShader(uint32_t binary, const SpecializationArgs& spec)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(cache_mutex_);
     auto& shaderMap = shaderCache[binary];
 
     auto it = shaderMap.find(spec.key);
     if (it != shaderMap.end()) return it->second;
 
-    ShaderSubmitInfo* shaderSubmitInfo = allocatePipeline(binary, spec);
-    shaderMap.emplace(std::string(spec.key), shaderSubmitInfo);
-    return shaderSubmitInfo;
+    ShaderSubmitInfo info{createPipeline(binary, spec), pipelineLayout};
+    shaderMap.emplace(std::string(spec.key), info);
+    return info;
 }
 
 VkShaderModule VulkanShaderManager::allocateShaderModule(uint32_t binary)
@@ -221,54 +247,24 @@ VkShaderModule VulkanShaderManager::allocateShaderModule(uint32_t binary)
     shaderInfo.codeSize = shader.size;
     shaderInfo.pCode = shader.code;
 
-    VkShaderModule shaderModule;
-    if (device->device_table.vkCreateShaderModule(device->device, &shaderInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create shader module for ", shader.name, ".");
-    }
+    VkShaderModule shaderModule = VK_NULL_HANDLE;
+    VkResult result = device->device_table.vkCreateShaderModule(device->device, &shaderInfo, nullptr, &shaderModule);
+    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to create shader module for ", shader.name, " (VkResult ", result, ").");
     shaderModuleCache[binary] = shaderModule;
     return shaderModule;
 }
 
-VkPipelineLayout VulkanShaderManager::allocatePipelineLayout()
+VkPipeline VulkanShaderManager::createPipeline(uint32_t binary, const SpecializationArgs& spec)
 {
     // assume active mutex
-    uint64_t layoutKey = MAX_PUSH_CONSTANT_BYTES;
-    auto it = pipelineLayoutCache.find(layoutKey);
-    if (it != pipelineLayoutCache.end()) return it->second;
-
-    VkPushConstantRange pushConstant{};
-    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstant.offset = 0;
-    pushConstant.size = MAX_PUSH_CONSTANT_BYTES;
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-    VkPipelineLayout pipelineLayout;
-    if (device->device_table.vkCreatePipelineLayout(device->device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create pipeline layout.");
-    }
-
-    pipelineLayoutCache[layoutKey] = pipelineLayout;
-    return pipelineLayout;
-}
-
-ShaderSubmitInfo* VulkanShaderManager::allocatePipeline(uint32_t binary, const SpecializationArgs spec)
-{
-    // assume active mutex
-    VkPipeline pipeline;
-    VkPipelineLayout pipelineLayout = allocatePipelineLayout();
     VkShaderModule shaderModule = allocateShaderModule(binary);
 
     std::vector<VkSpecializationMapEntry> mapEntries(spec.numConstants);
     size_t totalSize = 0;
     for (size_t i = 0; i < spec.numConstants; i++)
     {
-        mapEntries[i].constantID = i;
-        mapEntries[i].offset = spec.offsets[i];
+        mapEntries[i].constantID = static_cast<uint32_t>(i);
+        mapEntries[i].offset = static_cast<uint32_t>(spec.offsets[i]);
         mapEntries[i].size = spec.sizes[i];
         totalSize += spec.sizes[i];
     }
@@ -315,70 +311,53 @@ void VulkanShaderManager::displayPipelineStatistics(VkPipeline pipeline)
     VkPipelineExecutableInfoKHR pipelineExecInfo{};
     pipelineExecInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR;
     pipelineExecInfo.pipeline = pipeline;
-    pipelineExecInfo.executableIndex = 0; 
+    pipelineExecInfo.executableIndex = 0;
 
-    uint32_t pStatisticCount = 0;
+    uint32_t statisticCount = 0;
+    VK_CHECK(device->device_table.vkGetPipelineExecutableStatisticsKHR(device->device, &pipelineExecInfo, &statisticCount, nullptr));
 
-    if (device->device_table.vkGetPipelineExecutableStatisticsKHR( device->device, &pipelineExecInfo, &pStatisticCount, nullptr) != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to fetch pipeline statistics count.");
-    }
-
-    if (pStatisticCount <= 0) {
-        std::cout << "No statistics available." << std::endl;
+    if (statisticCount == 0) {
+        std::cerr << "torchvulkan: no pipeline statistics available." << std::endl;
         return;
     }
-    
-    std::vector<VkPipelineExecutableStatisticKHR> statistics(pStatisticCount);
-    
+
+    std::vector<VkPipelineExecutableStatisticKHR> statistics(statisticCount);
     for (auto& stat : statistics) {
         stat.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR;
         stat.pNext = nullptr;
     }
+    VK_CHECK(device->device_table.vkGetPipelineExecutableStatisticsKHR(device->device, &pipelineExecInfo, &statisticCount, statistics.data()));
 
-    if (device->device_table.vkGetPipelineExecutableStatisticsKHR(device->device, &pipelineExecInfo, &pStatisticCount, statistics.data()) != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to fetch pipeline statistics.");
-    }
-
-    for (const auto& stat : statistics) 
+    for (const auto& stat : statistics)
     {
-        std::cout << "Metric: " << stat.name << " (" << stat.description << ") = ";
-        
+        std::cerr << "Metric: " << stat.name << " (" << stat.description << ") = ";
         switch (stat.format) {
-            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:
-                std::cout << (stat.value.b32 ? "true" : "false");
-                break;
-            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:
-                std::cout << stat.value.i64;
-                break;
-            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:
-                std::cout << stat.value.u64;
-                break;
-            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:
-                std::cout << stat.value.f64;
-                break;
-            default:
-                std::cout << "Unknown format";
-                break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR: std::cerr << (stat.value.b32 ? "true" : "false"); break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR: std::cerr << stat.value.i64; break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR: std::cerr << stat.value.u64; break;
+            case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR: std::cerr << stat.value.f64; break;
+            default: std::cerr << "Unknown format"; break;
         }
-        std::cout << " | ";
+        std::cerr << " | ";
     }
-    
-    std::cout << "\n";
+    std::cerr << "\n";
 }
 
 void VulkanShaderManager::clearCache()
 {
+    for (auto& shaderMap : shaderCache)
+    {
+        for (auto& pair : shaderMap) device->device_table.vkDestroyPipeline(device->device, pair.second.pipeline, nullptr);
+        shaderMap.clear();
+    }
+
     for (VkShaderModule shaderModule : shaderModuleCache) {
         if (shaderModule != VK_NULL_HANDLE) device->device_table.vkDestroyShaderModule(device->device, shaderModule, nullptr);
     }
     shaderModuleCache.assign(shaderModuleCache.size(), VK_NULL_HANDLE);
 
-    for (auto& pair : pipelineLayoutCache) device->device_table.vkDestroyPipelineLayout(device->device, pair.second, nullptr);
-    pipelineLayoutCache.clear();
-
-    for (auto& shaderMap : shaderCache) 
-    {
-        for (auto& pair : shaderMap) delete pair.second;
-        shaderMap.clear();
-    }
+    if (pipelineLayout != VK_NULL_HANDLE) device->device_table.vkDestroyPipelineLayout(device->device, pipelineLayout, nullptr);
+    pipelineLayout = VK_NULL_HANDLE;
+    if (pipelineCache != VK_NULL_HANDLE) device->device_table.vkDestroyPipelineCache(device->device, pipelineCache, nullptr);
+    pipelineCache = VK_NULL_HANDLE;
 }
