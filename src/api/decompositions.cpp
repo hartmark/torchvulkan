@@ -269,8 +269,9 @@ at::Tensor& masked_fill_scalar_vulkan_(at::Tensor& self, const at::Tensor& mask,
 
 at::Tensor& masked_fill_tensor_vulkan_(at::Tensor& self, const at::Tensor& mask, const at::Tensor& value)
 {
-    self.copy_(at::where(mask, value, self));
-    return self;
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "masked_fill_ only supports boolean masks, but got mask with dtype ", mask.scalar_type());
+    TORCH_CHECK(value.dim() == 0, "masked_fill_ only supports a 0-dimensional value tensor, but got tensor with ", value.dim(), " dimension(s).");
+    return copy_inplace_result(self, at::where(mask, value.to(self.options()), self));
 }
 
 at::Tensor& nan_to_num_out_vulkan(const at::Tensor& self, c10::optional<double> nan, c10::optional<double> posinf, c10::optional<double> neginf, at::Tensor& out)
@@ -487,11 +488,19 @@ at::Tensor logsumexp_vulkan(
 }
 
 std::tuple<at::Tensor, at::Tensor> compute_var_mean(
-    const at::Tensor& self,
+    const at::Tensor& self_in,
     at::OptionalIntArrayRef dim,
     double correction,
     bool keepdim)
 {
+    TORCH_CHECK(at::isFloatingType(self_in.scalar_type()) || at::isComplexType(self_in.scalar_type()),
+        "std and var only support floating point and complex dtypes"
+    );
+
+    at::ScalarType odt = self_in.scalar_type();
+    bool low = is_low_prec(odt);
+    at::Tensor self = low ? self_in.to(at::kFloat) : self_in;
+
     at::Tensor mean_keep = at::mean(self, dim, /*keepdim=*/true);
     at::Tensor diff = at::sub(self, mean_keep);
     at::Tensor ssum = at::sum(at::mul(diff, diff), dim, keepdim);
@@ -508,6 +517,7 @@ std::tuple<at::Tensor, at::Tensor> compute_var_mean(
         ? at::div(ssum, denom)
         : at::full_like(ssum, std::numeric_limits<double>::quiet_NaN());
     at::Tensor mean = keepdim ? mean_keep : at::mean(self, dim, /*keepdim=*/false);
+    if (low) return std::make_tuple(var.to(odt), mean.to(odt));
     return std::make_tuple(var, mean);
 }
 
@@ -613,7 +623,7 @@ at::Tensor tril_indices_vulkan(
 ) {
     at::TensorOptions cpu_opts = at::TensorOptions().dtype(dtype.value_or(at::kLong)).layout(layout.value_or(at::kStrided)).device(at::kCPU);
     at::Tensor cpu = at::tril_indices(row, col, offset, cpu_opts);
-    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, 0)));
+    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())));
 }
 
 at::Tensor triu_indices_vulkan(
@@ -627,7 +637,7 @@ at::Tensor triu_indices_vulkan(
 ) {
     at::TensorOptions cpu_opts = at::TensorOptions().dtype(dtype.value_or(at::kLong)).layout(layout.value_or(at::kStrided)).device(at::kCPU);
     at::Tensor cpu = at::triu_indices(row, col, offset, cpu_opts);
-    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, 0)));
+    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())));
 }
 
 at::Tensor gelu_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, c10::string_view approximate)
@@ -728,8 +738,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     bool low = is_low_prec(odt);
     at::Tensor x = low ? input.to(at::kFloat) : input;
 
-    at::Tensor mean = at::mean(x, reduce_dims, /*keepdim=*/true);
-    at::Tensor var = at::var(x, reduce_dims, /*unbiased=*/false, /*keepdim=*/true);
+    auto [var, mean] = compute_var_mean(x, reduce_dims, /*correction=*/0.0, /*keepdim=*/true);
     at::Tensor rstd = at::rsqrt(at::add(var, eps));
     at::Tensor xhat = at::mul(at::sub(x, mean), rstd);
 

@@ -283,9 +283,25 @@ inline at::Tensor promote_to_float(const at::Tensor& self)
 // copies an op result into an out= tensor, resizing it first when the shapes differ
 inline at::Tensor& fill_out(at::Tensor& out, const at::Tensor& res)
 {
+    TORCH_CHECK(at::canCast(res.scalar_type(), out.scalar_type()),
+        "result type ", res.scalar_type(), " can't be cast to the desired output type ", out.scalar_type()
+    );
     if (out.sizes() != res.sizes()) out.resize_(res.sizes());
     out.copy_(res);
     return out;
+}
+
+// writes an in-place op's result back into self, with the checks torch makes: the result must keep
+// self's shape (no broadcasting self up) and be castable to self's dtype (no float into an int tensor)
+inline at::Tensor& copy_inplace_result(at::Tensor& self, const at::Tensor& result)
+{
+    TORCH_CHECK(at::canCast(result.scalar_type(), self.scalar_type()),
+        "result type ", result.scalar_type(), " can't be cast to the desired output type ", self.scalar_type()
+    );
+    TORCH_CHECK(result.sizes() == self.sizes(),
+        "output with shape ", self.sizes(), " doesn't match the broadcast shape ", result.sizes()
+    );
+    return self.copy_(result);
 }
 
 // integer reductions accumulate in int64 to avoid overflow

@@ -166,17 +166,25 @@ at::Tensor reduce_dims_vulkan(
     return result;
 }
 
+// the sum in its accumulation dtype (float32 for half and bfloat16), before it's cast to the output dtype
+at::Tensor sum_accumulated(
+    const at::Tensor& self,
+    at::OptionalIntArrayRef dim,
+    bool keepdim,
+    at::ScalarType out_dtype)
+{
+    at::Tensor acc = self.to(reduce_accumulate_dtype(out_dtype));
+    return reduce_dims_vulkan(acc, dim, keepdim, ReduceOp::SUM, 0.0, true);
+}
+
 at::Tensor sum_dim_vulkan(
     const at::Tensor& self,
     at::OptionalIntArrayRef dim,
     bool keepdim,
     c10::optional<at::ScalarType> dtype)
 {
-    at::Tensor self_typed = self.to(reduce_compute_dtype(self, dtype));
-    at::ScalarType out_dtype = self_typed.scalar_type();
-    at::Tensor acc = self_typed.to(reduce_accumulate_dtype(out_dtype));
-
-    return reduce_dims_vulkan(acc, dim, keepdim, ReduceOp::SUM, 0.0, true).to(out_dtype);
+    at::ScalarType out_dtype = reduce_compute_dtype(self, dtype);
+    return sum_accumulated(self, dim, keepdim, out_dtype).to(out_dtype);
 }
 
 } // namespace
@@ -236,9 +244,12 @@ at::Tensor mean_dim_vulkan(
     bool keepdim,
     c10::optional<at::ScalarType> dtype)
 {
-    if (self.dim() == 0) return dtype.has_value() ? self.to(*dtype) : self.clone();
-
-    at::Tensor summed = sum_dim_vulkan(self, dim, keepdim, dtype);
+    at::ScalarType out_dtype = dtype.value_or(self.scalar_type());
+    TORCH_CHECK(at::isFloatingType(out_dtype) || at::isComplexType(out_dtype),
+        "mean(): could not infer output dtype. ", (dtype.has_value() ? "Optional" : "Input"),
+        " dtype must be either a floating point or complex dtype. Got: ", out_dtype
+    );
+    if (self.dim() == 0) return self.to(out_dtype);
 
     int64_t count = 1;
     if (dim.has_value() && dim->size() > 0) {
@@ -247,7 +258,8 @@ at::Tensor mean_dim_vulkan(
         count = self.numel();
     }
 
-    return torchvulkan::divide_scalar_vulkan(summed, (double)count);
+    at::Tensor summed = sum_accumulated(self, dim, keepdim, out_dtype);
+    return torchvulkan::divide_scalar_vulkan(summed, (double)count).to(out_dtype);
 }
 
 at::Tensor mean_vulkan(

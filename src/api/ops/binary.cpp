@@ -315,6 +315,7 @@ at::Tensor clamp_max_tensor_vulkan(const at::Tensor& self, const at::Tensor& max
 }
 
 at::Tensor clamp_scalar_vulkan(const at::Tensor& self, const c10::optional<at::Scalar>& min, const c10::optional<at::Scalar>& max) {
+    TORCH_CHECK(min.has_value() || max.has_value(), "torch.clamp: At least one of 'min' or 'max' must not be None");
     at::Tensor result = self;
     if (min.has_value()) result = clamp_min_scalar_vulkan(result, *min);
     if (max.has_value()) result = clamp_max_scalar_vulkan(result, *max);
@@ -322,9 +323,12 @@ at::Tensor clamp_scalar_vulkan(const at::Tensor& self, const c10::optional<at::S
 }
 
 at::Tensor clamp_tensor_vulkan(const at::Tensor& self, const c10::optional<at::Tensor>& min, const c10::optional<at::Tensor>& max) {
+    bool has_min = min.has_value() && min->defined();
+    bool has_max = max.has_value() && max->defined();
+    TORCH_CHECK(has_min || has_max, "torch.clamp: At least one of 'min' or 'max' must not be None");
     at::Tensor result = self;
-    if (min.has_value()) result = maximum_vulkan(result, *min);
-    if (max.has_value()) result = minimum_vulkan(result, *max);
+    if (has_min) result = maximum_vulkan(result, *min);
+    if (has_max) result = minimum_vulkan(result, *max);
     return result;
 }
 
@@ -353,58 +357,64 @@ at::Tensor& clamp_tensor_out_vulkan(const at::Tensor& self, const c10::optional<
 }
 
 at::Tensor& add_vulkan_(at::Tensor& self, const at::Tensor& other, const at::Scalar& alpha) {
-    return self.copy_(torchvulkan::add_vulkan(self, other, alpha));
+    return copy_inplace_result(self, torchvulkan::add_vulkan(self, other, alpha));
 }
 
 at::Tensor& add_scalar_vulkan_(at::Tensor& self, const at::Scalar& other, const at::Scalar& alpha) {
-    return self.copy_(add_scalar_vulkan(self, other, alpha));
+    return copy_inplace_result(self, add_scalar_vulkan(self, other, alpha));
 }
 
 at::Tensor& subtract_vulkan_(at::Tensor& self, const at::Tensor& other, const at::Scalar& alpha) {
-    return self.copy_(subtract_vulkan(self, other, alpha));
+    return copy_inplace_result(self, subtract_vulkan(self, other, alpha));
 }
 
 at::Tensor& subtract_scalar_vulkan_(at::Tensor& self, const at::Scalar& other, const at::Scalar& alpha) {
-    return self.copy_(subtract_scalar_vulkan(self, other, alpha));
+    return copy_inplace_result(self, subtract_scalar_vulkan(self, other, alpha));
 }
 
 at::Tensor& multiply_vulkan_(at::Tensor& self, const at::Tensor& other) {
-    return self.copy_(torchvulkan::multiply_vulkan(self, other));
+    return copy_inplace_result(self, torchvulkan::multiply_vulkan(self, other));
 }
 
 at::Tensor& multiply_scalar_vulkan_(at::Tensor& self, const at::Scalar& other) {
-    return self.copy_(multiply_scalar_vulkan(self, other));
+    return copy_inplace_result(self, multiply_scalar_vulkan(self, other));
 }
 
 at::Tensor& divide_vulkan_(at::Tensor& self, const at::Tensor& other) {
-    return self.copy_(torchvulkan::divide_vulkan(self, other));
+    return copy_inplace_result(self, torchvulkan::divide_vulkan(self, other));
 }
 
 at::Tensor& divide_scalar_vulkan_(at::Tensor& self, const at::Scalar& other) {
-    return self.copy_(torchvulkan::divide_scalar_vulkan(self, other));
+    return copy_inplace_result(self, torchvulkan::divide_scalar_vulkan(self, other));
 }
 
 at::Tensor& addcmul_vulkan_(at::Tensor& self, const at::Tensor& tensor1, const at::Tensor& tensor2, const at::Scalar& value) {
     at::Tensor product = torchvulkan::multiply_vulkan(tensor1, tensor2);
-    return self.copy_(torchvulkan::add_vulkan(self, product, value));
+    return copy_inplace_result(self, torchvulkan::add_vulkan(self, product, value));
 }
 
 at::Tensor& addcdiv_vulkan_(at::Tensor& self, const at::Tensor& tensor1, const at::Tensor& tensor2, const at::Scalar& value) {
+    TORCH_CHECK(!(at::isIntegralType(tensor1.scalar_type(), true) && at::isIntegralType(tensor2.scalar_type(), true)),
+        "Integer division with addcdiv is no longer supported, and in a future release addcdiv will perform a true division of tensor1 and tensor2."
+    );
     at::Tensor quotient = torchvulkan::divide_vulkan(tensor1, tensor2);
-    return self.copy_(torchvulkan::add_vulkan(self, quotient, value));
+    return copy_inplace_result(self, torchvulkan::add_vulkan(self, quotient, value));
 }
 
+// as torch computes it: from whichever end is nearer, so weight 1 gives exactly `end`
 at::Tensor lerp_scalar_vulkan(const at::Tensor& self, const at::Tensor& end, const at::Scalar& weight) {
     at::Tensor diff = subtract_vulkan(end, self, (int)1);
-    return torchvulkan::add_vulkan(self, diff, weight);
+    double w = weight.toDouble();
+    if (w < 0.5) return torchvulkan::add_vulkan(self, diff, weight);
+    return subtract_vulkan(end, diff, 1.0 - w);
 }
 
 at::Tensor& lerp_scalar_vulkan_(at::Tensor& self, const at::Tensor& end, const at::Scalar& weight) {
-    return self.copy_(lerp_scalar_vulkan(self, end, weight));
+    return copy_inplace_result(self, lerp_scalar_vulkan(self, end, weight));
 }
 
 at::Tensor& lerp_scalar_vulkan_out(const at::Tensor& self, const at::Tensor& end, const at::Scalar& weight, at::Tensor& out) {
-    return out.copy_(lerp_scalar_vulkan(self, end, weight));
+    return fill_out(out, lerp_scalar_vulkan(self, end, weight));
 }
 
 } // namespace
