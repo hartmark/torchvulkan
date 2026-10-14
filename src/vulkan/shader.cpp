@@ -293,17 +293,89 @@ VkPipeline VulkanShaderManager::createPipeline(uint32_t binary, const Specializa
     pipelineInfo.stage = stageInfo;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.flags = flags;
-    
-    if (device->device_table.vkCreateComputePipelines(device->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to create compute pipeline.");
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkResult result = device->device_table.vkCreateComputePipelines(device->device, pipelineCache, 1, &pipelineInfo, nullptr, &pipeline);
+    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to create compute pipeline for ",
+        torchvulkan::SHADER_BINARIES[binary].name, " (VkResult ", result, ")."
+    );
+    pipelineCacheDirty = true;
+
+    if (capturePipelineStatistics) displayPipelineStatistics(pipeline);
+    return pipeline;
+}
+
+std::string VulkanShaderManager::pipelineCachePath() const
+{
+    const char* setting = std::getenv("TORCHVULKAN_PIPELINE_CACHE");
+    if (setting != nullptr && std::strcmp(setting, "0") == 0) return {};
+
+    std::filesystem::path dir;
+    if (const char* custom = std::getenv("TORCHVULKAN_CACHE_DIR")) dir = custom;
+#ifdef _WIN32
+    else if (const char* local = std::getenv("LOCALAPPDATA")) dir = std::filesystem::path(local) / "torchvulkan";
+#else
+    else if (const char* xdg = std::getenv("XDG_CACHE_HOME")) dir = std::filesystem::path(xdg) / "torchvulkan";
+    else if (const char* home = std::getenv("HOME")) dir = std::filesystem::path(home) / ".cache" / "torchvulkan";
+#endif
+    else return {};
+
+    // the driver checks the cache header too; the name keeps one file per device and driver
+    char uuid[2 * VK_UUID_SIZE + 1] = {0};
+    for (int i = 0; i < VK_UUID_SIZE; i++) std::snprintf(uuid + 2 * i, 3, "%02x", device->properties.pipelineCacheUUID[i]);
+    char name[128];
+    std::snprintf(name, sizeof(name), "pipelines-%04x-%04x-%s.bin", device->properties.vendorID, device->properties.deviceID, uuid);
+    return (dir / name).string();
+}
+
+void VulkanShaderManager::createPipelineCache()
+{
+    std::vector<char> initial;
+    std::string path = pipelineCachePath();
+    if (!path.empty()) {
+        std::ifstream file(path, std::ios::binary);
+        if (file) initial.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
     }
 
-    if (capturePipelineStatistics) {
-        displayPipelineStatistics(pipeline);
-    }
+    VkPipelineCacheCreateInfo cacheInfo{};
+    cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheInfo.initialDataSize = initial.size();
+    cacheInfo.pInitialData = initial.empty() ? nullptr : initial.data();
 
-    ShaderSubmitInfo* info = new ShaderSubmitInfo{ pipeline, pipelineLayout };
-    return info;
+    // a driver may reject stale data, so retry with an empty cache before giving up on caching
+    if (device->device_table.vkCreatePipelineCache(device->device, &cacheInfo, nullptr, &pipelineCache) == VK_SUCCESS) return;
+    cacheInfo.initialDataSize = 0;
+    cacheInfo.pInitialData = nullptr;
+    if (device->device_table.vkCreatePipelineCache(device->device, &cacheInfo, nullptr, &pipelineCache) != VK_SUCCESS) pipelineCache = VK_NULL_HANDLE;
+}
+
+void VulkanShaderManager::savePipelineCache()
+{
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    if (pipelineCache == VK_NULL_HANDLE || !pipelineCacheDirty) return;
+    std::string path = pipelineCachePath();
+    if (path.empty()) return;
+
+    size_t size = 0;
+    if (device->device_table.vkGetPipelineCacheData(device->device, pipelineCache, &size, nullptr) != VK_SUCCESS || size == 0) return;
+    std::vector<char> data(size);
+    if (device->device_table.vkGetPipelineCacheData(device->device, pipelineCache, &size, data.data()) != VK_SUCCESS) return;
+
+    // written to a temporary file and renamed, so a concurrent reader never sees half a cache
+    std::error_code ec;
+    std::filesystem::path target(path);
+    std::filesystem::create_directories(target.parent_path(), ec);
+    std::filesystem::path temp = target;
+    temp += ".tmp" + std::to_string(reinterpret_cast<uintptr_t>(this));
+    {
+        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+        if (!file) return;
+        file.write(data.data(), static_cast<std::streamsize>(size));
+        if (!file) return;
+    }
+    std::filesystem::rename(temp, target, ec);
+    if (ec) std::filesystem::remove(temp, ec);
+    else pipelineCacheDirty = false;
 }
 
 void VulkanShaderManager::displayPipelineStatistics(VkPipeline pipeline)

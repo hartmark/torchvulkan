@@ -1,3 +1,4 @@
+import atexit
 import sys
 
 try:
@@ -79,6 +80,8 @@ def set_rng_state_all(new_states) -> None:
 
 def _is_in_bad_fork() -> bool:
     return _C._is_in_bad_fork()
+
+atexit.register(_C._save_pipeline_caches)
 
 torch.utils.rename_privateuse1_backend('vulkan')
 torch._register_device_module('vulkan', sys.modules[__name__])
