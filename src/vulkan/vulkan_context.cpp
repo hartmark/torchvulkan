@@ -231,6 +231,13 @@ void VulkanContext::createDeviceContexts()
     std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
     vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data());
 
+    std::stable_sort(physicalDevices.begin(), physicalDevices.end(), [](VkPhysicalDevice a, VkPhysicalDevice b) {
+        VkPhysicalDeviceProperties pa, pb;
+        vkGetPhysicalDeviceProperties(a, &pa);
+        vkGetPhysicalDeviceProperties(b, &pb);
+        return deviceTypeRank(pa.deviceType) < deviceTypeRank(pb.deviceType);
+    });
+
     for (const VkPhysicalDevice& physicalDevice : physicalDevices) 
     {                
         VkPhysicalDeviceProperties props;
