@@ -129,9 +129,7 @@ VulkanContext::VulkanContext()
 void VulkanContext::initVulkan()
 {
     VkResult result = loadVulkan();
-    if (result != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to initialize volk with error code ", std::to_string(result), ". Vulkan loader cannot be found.");
-    }
+    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to initialize volk with error code ", result, ". Vulkan loader cannot be found.");
 
     uint32_t instanceVersion = VK_API_VERSION_1_0;
     if (vkEnumerateInstanceVersion != nullptr) vkEnumerateInstanceVersion(&instanceVersion);
@@ -208,9 +206,7 @@ void VulkanContext::initVulkan()
     createInfo.ppEnabledLayerNames = instanceLayers.data();
 
     result = vkCreateInstance(&createInfo, nullptr, &instance);
-    if (result != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Failed to initialize Vulkan with error code ", std::to_string(result), ".");
-    }
+    TORCH_CHECK(result == VK_SUCCESS, "torchvulkan [ERROR]: Failed to initialize Vulkan with error code ", result, ".");
 
     volkLoadInstance(instance);
 
@@ -273,12 +269,13 @@ void VulkanContext::createDeviceContexts()
         context->physicalDevice = physicalDevice;
         context->computeQueueFamily = bestQueueFamily;
 
-        VkPhysicalDeviceSubgroupProperties subgroupProps{};
-        subgroupProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
-        subgroupProps.pNext = nullptr;
+        VkPhysicalDeviceVulkan13Properties props13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+        VkPhysicalDeviceVulkan12Properties props12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+        props12.pNext = &props13;
+        VkPhysicalDeviceSubgroupProperties subgroupProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+        subgroupProps.pNext = &props12;
 
-        VkPhysicalDeviceProperties2 props2{};
-        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
         props2.pNext = &subgroupProps;
 
         vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
@@ -325,12 +322,8 @@ void VulkanContext::createDeviceWithExtensions()
             return false;
         };
         
-        // chain of feature structs to query what the device supports
-        VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR supportedPipelineExec{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
-        VkPhysicalDeviceCooperativeMatrixFeaturesKHR supportedCoopMat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
-        supportedCoopMat.pNext = &supportedPipelineExec;
+        // chain of feature structs to query what the device supports; extension structs only when the extension exists
         VkPhysicalDeviceVulkan13Features supported13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-        supported13.pNext = &supportedCoopMat;
         VkPhysicalDeviceVulkan12Features supported12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         supported12.pNext = &supported13;
         VkPhysicalDeviceVulkan11Features supported11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
@@ -338,11 +331,17 @@ void VulkanContext::createDeviceWithExtensions()
         VkPhysicalDeviceFeatures2 supportedFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
         supportedFeatures2.pNext = &supported11;
 
+        auto chainQuery = [&](auto& features) {
+            features.pNext = supportedFeatures2.pNext;
+            supportedFeatures2.pNext = &features;
+        };
+
+        VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR supportedPipelineExec{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+        if (hasExt(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) chainQuery(supportedPipelineExec);
+        VkPhysicalDeviceCooperativeMatrixFeaturesKHR supportedCoopMat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
+        if (hasExt(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME)) chainQuery(supportedCoopMat);
         VkPhysicalDeviceShaderBfloat16FeaturesKHR supportedBfloat16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
-        if (hasExt(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME)) {
-            supportedBfloat16.pNext = supportedFeatures2.pNext;
-            supportedFeatures2.pNext = &supportedBfloat16;
-        }
+        if (hasExt(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME)) chainQuery(supportedBfloat16);
 
         // query which ones are supported
         vkGetPhysicalDeviceFeatures2(device->physicalDevice, &supportedFeatures2);
@@ -353,6 +352,7 @@ void VulkanContext::createDeviceWithExtensions()
         enable13.synchronization2 = VK_TRUE;
         enable13.subgroupSizeControl = supported13.subgroupSizeControl;
         enable13.computeFullSubgroups = supported13.computeFullSubgroups;
+        enable13.maintenance4 = supported13.maintenance4; // Slang sizes workgroups with LocalSizeId
         VkPhysicalDeviceVulkan12Features enable12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         enable12.pNext = &enable13;
         enable12.shaderFloat16 = supported12.shaderFloat16;
@@ -361,6 +361,8 @@ void VulkanContext::createDeviceWithExtensions()
         enable12.scalarBlockLayout = supported12.scalarBlockLayout;
         enable12.bufferDeviceAddress = supported12.bufferDeviceAddress;
         enable12.shaderSubgroupExtendedTypes = supported12.shaderSubgroupExtendedTypes; // subgroup ops on 8/16/64-bit types for reductions
+        enable12.vulkanMemoryModel = supported12.vulkanMemoryModel; // Slang's SPIR-V declares the Vulkan memory model
+        enable12.vulkanMemoryModelDeviceScope = supported12.vulkanMemoryModelDeviceScope;
         VkPhysicalDeviceVulkan11Features enable11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         enable11.storageBuffer16BitAccess = supported11.storageBuffer16BitAccess;
         enable11.pNext = &enable12;
@@ -370,10 +372,17 @@ void VulkanContext::createDeviceWithExtensions()
         enable10.shaderInt16 = supportedFeatures2.features.shaderInt16;
         // no need to chain enable10 -> enable11 here as it is done in features2
 
+        // every kernel takes its tensors as 64-bit buffer device addresses
+        if (!supported12.bufferDeviceAddress || !supportedFeatures2.features.shaderInt64) {
+            TORCH_WARN("torchvulkan [WARNING]: Vulkan device '", device->properties.deviceName, "' lacks bufferDeviceAddress or shaderInt64 and will be skipped.");
+            device->valid = false;
+            continue;
+        }
+
         device->support_float32 = true;
         device->support_int32 = true;
         device->support_float64 = supportedFeatures2.features.shaderFloat64;
-        device->support_int64 = supportedFeatures2.features.shaderInt64;
+        device->support_int64 = true;
         device->support_float16 = supported12.shaderFloat16 && enable11.storageBuffer16BitAccess;
         device->support_bfloat16 = false;
         device->support_int16 = supportedFeatures2.features.shaderInt16 && enable11.storageBuffer16BitAccess;
@@ -410,13 +419,13 @@ void VulkanContext::createDeviceWithExtensions()
 
             uint32_t propertyCount = 0;
             vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(device->physicalDevice, &propertyCount, nullptr);
-            std::vector<VkCooperativeMatrixPropertiesKHR> coopMatProperties;
-            coopMatProperties.resize(propertyCount);
+            std::vector<VkCooperativeMatrixPropertiesKHR> coopMatProperties(propertyCount, {VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR});
             vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(device->physicalDevice, &propertyCount, coopMatProperties.data());
 
-            for (int i = 0; i < propertyCount; ++i)
+            for (const VkCooperativeMatrixPropertiesKHR& property : coopMatProperties)
             {
-                VkCooperativeMatrixPropertiesKHR property = coopMatProperties[i];
+                // matmul_coop's fragments are subgroup-scoped
+                if (property.scope != VK_SCOPE_SUBGROUP_KHR) continue;
 
                 bool uses_bfloat16 = property.AType == COMPONENT_TYPE_BFLOAT16 || property.BType == COMPONENT_TYPE_BFLOAT16 ||
                                      property.CType == COMPONENT_TYPE_BFLOAT16 || property.ResultType == COMPONENT_TYPE_BFLOAT16;
@@ -459,8 +468,6 @@ void VulkanContext::createDeviceWithExtensions()
             deviceExtensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
         }
 
-        deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
-
         #ifdef __APPLE__
         if (hasExt("VK_KHR_portability_subset")) {
             deviceExtensions.push_back("VK_KHR_portability_subset");
@@ -486,8 +493,6 @@ void VulkanContext::createDeviceWithExtensions()
 
         if (vkCreateDevice(device->physicalDevice, &createInfo, nullptr, &device->device) == VK_SUCCESS) {
             volkLoadDeviceTable(&device->device_table, device->device);
-            device->cache.setDevice(device->device);
-            device->cache.setDeviceTable(device->device_table);
             device->device_table.vkGetDeviceQueue(device->device, device->computeQueueFamily, 0, &device->computeQueue);
             continue;
         }
