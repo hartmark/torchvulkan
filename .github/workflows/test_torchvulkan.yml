@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -52,14 +52,87 @@ jobs:
         run: |
           tox -e py-${{ matrix.torch-factor }}
 
+  validation:
+    name: validation layers (lavapipe, debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install toolchain (Slang, Vulkan, validation layers)
+        uses: ./.github/actions/setup-toolchain
+        with:
+          validation-layers: "true"
+
+      - name: Run tests under the validation layer
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          SKBUILD_CMAKE_GENERATOR: Ninja
+          SKBUILD_CMAKE_BUILD_TYPE: Debug
+          TORCHVULKAN_VALIDATION: sync
+          MKL_ENABLE_INSTRUCTIONS: AVX2
+          ATEN_CPU_CAPABILITY: avx2
+          ONEDNN_MAX_CPU_ISA: AVX2
+          DNNL_MAX_CPU_ISA: AVX2
+          LP_NATIVE_VECTOR_WIDTH: "256"
+        run: |
+          python -m pip install --upgrade pip
+          pip install tox
+          tox -e py-torch213 -- -k "TestVulkanRuntime or test_correctness_add or test_correctness_mm or test_correctness_sum or test_correctness_sort or test_correctness_index or test_correctness_cumsum or test_gradients_nn_functional_linear"
+
+  sanitizers:
+    name: ASan + UBSan (lavapipe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install toolchain (Slang, Vulkan)
+        uses: ./.github/actions/setup-toolchain
+
+      - name: Build with sanitizers
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          SKBUILD_CMAKE_GENERATOR: Ninja
+          SKBUILD_CMAKE_BUILD_TYPE: RelWithDebInfo
+          SKBUILD_CMAKE_ARGS: "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer;-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address,undefined"
+        run: |
+          python -m pip install --upgrade pip
+          pip install "torch==2.13.0" pytest expecttest numpy ninja scikit-build-core setuptools_scm
+          pip install . --no-build-isolation -v
+
+      - name: Run tests with the sanitizer runtimes preloaded
+        env:
+          MKL_ENABLE_INSTRUCTIONS: AVX2
+          ATEN_CPU_CAPABILITY: avx2
+          ONEDNN_MAX_CPU_ISA: AVX2
+          DNNL_MAX_CPU_ISA: AVX2
+          LP_NATIVE_VECTOR_WIDTH: "256"
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:protect_shadow_gap=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          cd "$RUNNER_TEMP"
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so):$(gcc -print-file-name=libubsan.so)"
+          python -m pytest "$GITHUB_WORKSPACE/tests/test_pytorch_ops.py" -q -k "TestVulkanRuntime or test_correctness_add or test_correctness_mm or test_correctness_sort or test_correctness_index or test_correctness_sum"
+
   testing-success:
     name: testing success
-    needs: build-and-test
+    needs: [build-and-test, validation, sanitizers]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify all test jobs passed
-        if: needs.build-and-test.result != 'success'
+        if: needs.build-and-test.result != 'success' || needs.validation.result != 'success' || needs.sanitizers.result != 'success'
         run: |
-          echo "build-and-test result: ${{ needs.build-and-test.result }}"
+          echo "build-and-test: ${{ needs.build-and-test.result }}, validation: ${{ needs.validation.result }}, sanitizers: ${{ needs.sanitizers.result }}"
           exit 1
