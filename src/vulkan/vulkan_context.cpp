@@ -1,8 +1,12 @@
 #define VOLK_IMPLEMENTATION
 #include "vulkan_context.h"
 #include "generator.h"
+#include "shader.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstring>
 
 #ifdef __APPLE__
 #include <dlfcn.h>
@@ -60,6 +64,33 @@ static VkResult loadVulkan()
 
 static std::atomic<bool> contextInitialized{false};
 static std::atomic<bool> inBadFork{false};
+static std::atomic<uint64_t> validationErrors{0};
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL validationCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT /* types */,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* /* user_data */)
+{
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        validationErrors++;
+        std::fprintf(stderr, "torchvulkan [VALIDATION]: %s\n", data->pMessage);
+    }
+    return VK_FALSE;
+}
+
+// device types in the order devices are numbered: a discrete GPU becomes device 0, a software rasterizer last
+static int deviceTypeRank(VkPhysicalDeviceType type)
+{
+    switch (type)
+    {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return 0;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return 1;
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return 2;
+        case VK_PHYSICAL_DEVICE_TYPE_CPU: return 4;
+        default: return 3;
+    }
+}
 
 #ifndef _WIN32
 // a forked child shares the parent's driver state, which is not valid in the child
@@ -139,15 +170,36 @@ void VulkanContext::initVulkan()
     }
     #endif
 
-    #ifndef NDEBUG
-    uint32_t layerCount = 0;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    std::vector<VkLayerProperties> supportedLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, supportedLayers.data());
-    for (const auto& layer : supportedLayers) {
-        if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+    // the validation layer is on with TORCHVULKAN_VALIDATION=1 (=sync adds synchronization validation)
+    const char* validationSetting = std::getenv("TORCHVULKAN_VALIDATION");
+    bool wantValidation = isEnvSet("TORCHVULKAN_VALIDATION");
+    bool wantSyncValidation = validationSetting != nullptr && std::strcmp(validationSetting, "sync") == 0;
+    bool hasValidation = false;
+
+    if (wantValidation) {
+        uint32_t layerCount = 0;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        std::vector<VkLayerProperties> supportedLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, supportedLayers.data());
+        for (const auto& layer : supportedLayers) {
+            if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) hasValidation = true;
+        }
+        if (hasValidation) instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+        else TORCH_WARN("torchvulkan [WARNING]: Validation was requested, but VK_LAYER_KHRONOS_validation is not installed.");
     }
-    #endif
+
+    bool hasDebugUtils = hasValidation && hasExt(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (hasDebugUtils) instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    VkValidationFeatureEnableEXT syncValidation = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    VkValidationFeaturesEXT validationFeatures{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+    validationFeatures.enabledValidationFeatureCount = 1;
+    validationFeatures.pEnabledValidationFeatures = &syncValidation;
+    if (hasValidation && wantSyncValidation) {
+        // VK_EXT_validation_features is provided by the layer itself
+        instanceExtensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+        createInfo.pNext = &validationFeatures;
+    }
 
     createInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
     createInfo.ppEnabledExtensionNames = instanceExtensions.data();
@@ -161,6 +213,15 @@ void VulkanContext::initVulkan()
     }
 
     volkLoadInstance(instance);
+
+    if (hasDebugUtils) {
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+        messengerInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        messengerInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        messengerInfo.pfnUserCallback = validationCallback;
+        if (vkCreateDebugUtilsMessengerEXT(instance, &messengerInfo, nullptr, &debugMessenger) != VK_SUCCESS) debugMessenger = VK_NULL_HANDLE;
+    }
 
     isStrict_ = isEnvSet("TORCHVULKAN_STRICT");
     enableProfiling_ = isEnvSet("TORCHVULKAN_PROFILE");
@@ -512,5 +573,6 @@ void VulkanContext::createGenerators()
 VulkanContext::~VulkanContext() 
 {
     for (const DeviceContext* device : devices) delete device;
+    if (debugMessenger != VK_NULL_HANDLE) vkDestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     if (instance != VK_NULL_HANDLE) vkDestroyInstance(instance, nullptr);
 }

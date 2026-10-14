@@ -1,6 +1,7 @@
 #pragma once
 #include <c10/core/Device.h>
 #include <volk.h>
+#include <atomic>
 #include <vector>
 
 #include "device_context.h"
@@ -39,9 +40,10 @@ private:
 
     // minimum Vulkan version
     static constexpr uint32_t apiVersion = VK_API_VERSION_1_3;
-    bool isStrict_ = true;
+    bool isStrict_ = false;
     bool enableProfiling_ = false;
+    VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
 
-    // each device creates a new currentDeviceIndex 
+    // each device creates a new currentDeviceIndex
     static thread_local c10::DeviceIndex currentDeviceIndex;
 };
