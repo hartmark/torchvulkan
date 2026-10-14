@@ -50,7 +50,12 @@ enum class UnaryOp {
     LGAMMA = 38,
     DIGAMMA = 39,
     I0 = 40,
-    I1 = 41
+    I1 = 41,
+    ERFC = 42,
+    ERFCX = 43,
+    LOG_NDTR = 44,
+    I0E = 45,
+    I1E = 46
 };
 
 at::Tensor unary_op_vulkan(
@@ -320,6 +325,85 @@ at::Tensor i1_vulkan(const at::Tensor& self)
     return unary_op_vulkan(promote_to_float(self), UnaryOp::I1, [](const at::Tensor& a) { return at::special_i1(a); });
 }
 
+at::Tensor erfc_vulkan(const at::Tensor& self)
+{
+    return unary_op_vulkan(promote_to_float(self), UnaryOp::ERFC, [](const at::Tensor& a) { return at::erfc(a); });
+}
+
+at::Tensor erfcx_vulkan(const at::Tensor& self)
+{
+    return unary_op_vulkan(promote_to_float(self), UnaryOp::ERFCX, [](const at::Tensor& a) { return at::special_erfcx(a); });
+}
+
+at::Tensor log_ndtr_vulkan(const at::Tensor& self)
+{
+    return unary_op_vulkan(promote_to_float(self), UnaryOp::LOG_NDTR, [](const at::Tensor& a) { return at::special_log_ndtr(a); });
+}
+
+at::Tensor i0e_vulkan(const at::Tensor& self)
+{
+    return unary_op_vulkan(promote_to_float(self), UnaryOp::I0E, [](const at::Tensor& a) { return at::special_i0e(a); });
+}
+
+at::Tensor i1e_vulkan(const at::Tensor& self)
+{
+    return unary_op_vulkan(promote_to_float(self), UnaryOp::I1E, [](const at::Tensor& a) { return at::special_i1e(a); });
+}
+
+at::Tensor& relu_vulkan_(at::Tensor& self)
+{
+    return copy_inplace_result(self, relu_vulkan(self));
+}
+
+// the out= variants, which torch also routes the in-place forms (exp_, sigmoid_, ...) through
+at::Tensor& exp_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, exp_vulkan(self)); }
+at::Tensor& log_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, log_vulkan(self)); }
+at::Tensor& sqrt_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sqrt_vulkan(self)); }
+at::Tensor& neg_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, neg_vulkan(self)); }
+at::Tensor& reciprocal_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, reciprocal_vulkan(self)); }
+at::Tensor& sin_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sin_vulkan(self)); }
+at::Tensor& cos_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, cos_vulkan(self)); }
+at::Tensor& tan_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, tan_vulkan(self)); }
+at::Tensor& asin_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, asin_vulkan(self)); }
+at::Tensor& acos_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, acos_vulkan(self)); }
+at::Tensor& atan_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, atan_vulkan(self)); }
+at::Tensor& sinh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sinh_vulkan(self)); }
+at::Tensor& cosh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, cosh_vulkan(self)); }
+at::Tensor& tanh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, tanh_vulkan(self)); }
+at::Tensor& asinh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, asinh_vulkan(self)); }
+at::Tensor& acosh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, acosh_vulkan(self)); }
+at::Tensor& atanh_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, atanh_vulkan(self)); }
+at::Tensor& exp2_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, exp2_vulkan(self)); }
+at::Tensor& log2_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, log2_vulkan(self)); }
+at::Tensor& log10_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, log10_vulkan(self)); }
+at::Tensor& expm1_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, expm1_vulkan(self)); }
+at::Tensor& log1p_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, log1p_vulkan(self)); }
+at::Tensor& rsqrt_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, rsqrt_vulkan(self)); }
+at::Tensor& sigmoid_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sigmoid_vulkan(self)); }
+at::Tensor& deg2rad_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, deg2rad_vulkan(self)); }
+at::Tensor& rad2deg_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, rad2deg_vulkan(self)); }
+at::Tensor& floor_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, floor_vulkan(self)); }
+at::Tensor& ceil_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, ceil_vulkan(self)); }
+at::Tensor& trunc_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, trunc_vulkan(self)); }
+at::Tensor& round_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, round_vulkan(self)); }
+at::Tensor& frac_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, frac_vulkan(self)); }
+at::Tensor& abs_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, abs_vulkan(self)); }
+at::Tensor& sign_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sign_vulkan(self)); }
+at::Tensor& sgn_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sign_vulkan(self)); }
+at::Tensor& erf_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erf_vulkan(self)); }
+at::Tensor& erfc_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erfc_vulkan(self)); }
+at::Tensor& erfinv_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erfinv_vulkan(self)); }
+at::Tensor& sinc_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sinc_vulkan(self)); }
+at::Tensor& entr_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, entr_vulkan(self)); }
+at::Tensor& lgamma_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, lgamma_vulkan(self)); }
+at::Tensor& digamma_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, digamma_vulkan(self)); }
+at::Tensor& i0_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, i0_vulkan(self)); }
+at::Tensor& i1_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, i1_vulkan(self)); }
+at::Tensor& erfcx_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erfcx_vulkan(self)); }
+at::Tensor& log_ndtr_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, log_ndtr_vulkan(self)); }
+at::Tensor& i0e_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, i0e_vulkan(self)); }
+at::Tensor& i1e_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, i1e_vulkan(self)); }
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -366,4 +450,57 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("digamma", &digamma_vulkan);
     m.impl("i0", &i0_vulkan);
     m.impl("special_i1", &i1_vulkan);
+    m.impl("erfc", &erfc_vulkan);
+    m.impl("special_erfcx", &erfcx_vulkan);
+    m.impl("special_log_ndtr", &log_ndtr_vulkan);
+    m.impl("relu_", &relu_vulkan_);
+    m.impl("exp.out", &exp_out_vulkan);
+    m.impl("log.out", &log_out_vulkan);
+    m.impl("sqrt.out", &sqrt_out_vulkan);
+    m.impl("neg.out", &neg_out_vulkan);
+    m.impl("reciprocal.out", &reciprocal_out_vulkan);
+    m.impl("sin.out", &sin_out_vulkan);
+    m.impl("cos.out", &cos_out_vulkan);
+    m.impl("tan.out", &tan_out_vulkan);
+    m.impl("asin.out", &asin_out_vulkan);
+    m.impl("acos.out", &acos_out_vulkan);
+    m.impl("atan.out", &atan_out_vulkan);
+    m.impl("sinh.out", &sinh_out_vulkan);
+    m.impl("cosh.out", &cosh_out_vulkan);
+    m.impl("tanh.out", &tanh_out_vulkan);
+    m.impl("asinh.out", &asinh_out_vulkan);
+    m.impl("acosh.out", &acosh_out_vulkan);
+    m.impl("atanh.out", &atanh_out_vulkan);
+    m.impl("exp2.out", &exp2_out_vulkan);
+    m.impl("log2.out", &log2_out_vulkan);
+    m.impl("log10.out", &log10_out_vulkan);
+    m.impl("expm1.out", &expm1_out_vulkan);
+    m.impl("log1p.out", &log1p_out_vulkan);
+    m.impl("rsqrt.out", &rsqrt_out_vulkan);
+    m.impl("sigmoid.out", &sigmoid_out_vulkan);
+    m.impl("deg2rad.out", &deg2rad_out_vulkan);
+    m.impl("rad2deg.out", &rad2deg_out_vulkan);
+    m.impl("floor.out", &floor_out_vulkan);
+    m.impl("ceil.out", &ceil_out_vulkan);
+    m.impl("trunc.out", &trunc_out_vulkan);
+    m.impl("round.out", &round_out_vulkan);
+    m.impl("frac.out", &frac_out_vulkan);
+    m.impl("abs.out", &abs_out_vulkan);
+    m.impl("sign.out", &sign_out_vulkan);
+    m.impl("sgn.out", &sgn_out_vulkan);
+    m.impl("erf.out", &erf_out_vulkan);
+    m.impl("erfc.out", &erfc_out_vulkan);
+    m.impl("erfinv.out", &erfinv_out_vulkan);
+    m.impl("sinc.out", &sinc_out_vulkan);
+    m.impl("special_entr.out", &entr_out_vulkan);
+    m.impl("lgamma.out", &lgamma_out_vulkan);
+    m.impl("digamma.out", &digamma_out_vulkan);
+    m.impl("i0.out", &i0_out_vulkan);
+    m.impl("special_i1.out", &i1_out_vulkan);
+    m.impl("special_erfcx.out", &erfcx_out_vulkan);
+    m.impl("special_log_ndtr.out", &log_ndtr_out_vulkan);
+    m.impl("special_i0e", &i0e_vulkan);
+    m.impl("special_i0e.out", &i0e_out_vulkan);
+    m.impl("special_i1e", &i1e_vulkan);
+    m.impl("special_i1e.out", &i1e_out_vulkan);
 }

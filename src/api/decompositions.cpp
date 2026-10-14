@@ -218,42 +218,10 @@ at::Tensor& gelu_out_vulkan(const at::Tensor& self, c10::string_view approximate
     return fill_out(out, r);
 }
 
-at::Tensor& erfc_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::rsub(at::erf(self), 1));
-}
-
-at::Tensor& log_ndtr_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::log(at::special_ndtr(self)));
-}
-
-at::Tensor& i0e_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    at::Tensor x = self.is_floating_point() ? self : self.to(at::kFloat);
-    return fill_out(out, at::mul(at::exp(at::neg(at::abs(x))), at::i0(x)));
-}
-
-at::Tensor& i1e_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    at::Tensor x = self.is_floating_point() ? self : self.to(at::kFloat);
-    return fill_out(out, at::mul(at::exp(at::neg(at::abs(x))), at::special_i1(x)));
-}
-
-at::Tensor& erfcx_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::mul(at::exp(at::mul(self, self)), at::erfc(self)));
-}
-
-at::Tensor& lgamma_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::lgamma(self));
-}
-
 at::Tensor& masked_fill_scalar_vulkan_(at::Tensor& self, const at::Tensor& mask, const at::Scalar& value)
 {
-    self.copy_(at::where(mask, at::scalar_tensor(value, self.options()), self));
-    return self;
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "masked_fill_ only supports boolean masks, but got mask with dtype ", mask.scalar_type());
+    return copy_inplace_result(self, at::where(mask, at::scalar_tensor(value, self.options()), self));
 }
 
 at::Tensor& masked_fill_tensor_vulkan_(at::Tensor& self, const at::Tensor& mask, const at::Tensor& value)
@@ -944,12 +912,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("tril_indices", &tril_indices_vulkan);
     m.impl("triu_indices", &triu_indices_vulkan);
     m.impl("logit", &logit_vulkan);
-    m.impl("lgamma.out", &lgamma_out_vulkan);
     m.impl("gelu.out", &gelu_out_vulkan);
     m.impl("gelu_backward", &gelu_backward_vulkan);
-    m.impl("erfc.out", &erfc_out_vulkan);
-    m.impl("special_i0e.out", &i0e_out_vulkan);
-    m.impl("special_i1e.out", &i1e_out_vulkan);
     m.impl("silu", &silu_vulkan);
     m.impl("hardtanh", &hardtanh_vulkan);
     m.impl("hardsigmoid", &hardsigmoid_vulkan);
