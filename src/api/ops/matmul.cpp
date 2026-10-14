@@ -88,10 +88,66 @@ at::Tensor apply_matmul_activation(
     }
 }
 
-// returns the dtype a matmul accumulates in
 c10::ScalarType matmul_accumulate_dtype(c10::ScalarType dtype)
 {
     return (dtype == at::kHalf || dtype == at::kBFloat16) ? at::kFloat : dtype;
+}
+
+struct MatmulShape {
+    at::Tensor self;
+    at::Tensor other;
+    bool self_unsqueezed = false;
+    bool other_unsqueezed = false;
+    uint32_t M = 0, K = 0, N = 0;
+    int64_t B = 1;
+    std::vector<int64_t> batch_shape;
+    std::vector<int64_t> out_shape;
+};
+
+MatmulShape get_matmul_shape(const at::Tensor& self_, const at::Tensor& other_)
+{
+    MatmulShape shape;
+    shape.self = self_;
+    shape.other = other_;
+    if (shape.self.dim() < 2) {
+        shape.self = shape.self.unsqueeze(0);
+        shape.self_unsqueezed = true;
+    }
+    if (shape.other.dim() < 2) {
+        shape.other = shape.other.unsqueeze(1);
+        shape.other_unsqueezed = true;
+    }
+
+    TORCH_CHECK(shape.self.size(-1) == shape.other.size(-2), "torchvulkan [ERROR]: matmul inner dimensions must match, got ",
+        shape.self.sizes(), " and ", shape.other.sizes(), ".");
+
+    shape.M = static_cast<uint32_t>(shape.self.size(-2));
+    shape.K = static_cast<uint32_t>(shape.self.size(-1));
+    shape.N = static_cast<uint32_t>(shape.other.size(-1));
+
+    at::IntArrayRef self_batch = shape.self.sizes().slice(0, shape.self.dim() - 2);
+    at::IntArrayRef other_batch = shape.other.sizes().slice(0, shape.other.dim() - 2);
+    shape.batch_shape = at::infer_size(self_batch, other_batch);
+    for (int64_t s : shape.batch_shape) shape.B *= s;
+
+    shape.out_shape = shape.batch_shape;
+    shape.out_shape.push_back(shape.M);
+    shape.out_shape.push_back(shape.N);
+    return shape;
+}
+
+at::Tensor finish_matmul_output(const at::Tensor& out, const MatmulShape& shape)
+{
+    at::Tensor result = out.reshape(shape.out_shape);
+    if (shape.self_unsqueezed && shape.other_unsqueezed) return result.squeeze(-1).squeeze(-1);
+    if (shape.self_unsqueezed) return result.squeeze(-2);
+    if (shape.other_unsqueezed) return result.squeeze(-1);
+    return result;
+}
+
+bool fits_matmul_indexing(const MatmulOperands& ops, const at::Tensor& out)
+{
+    return fits_32bit_indexing({ops.self_b, ops.other_b, ops.bias_b, out});
 }
 
 at::Tensor dispatch_matmul_simd_shader(
@@ -103,49 +159,19 @@ at::Tensor dispatch_matmul_simd_shader(
     MatmulActivation activation,
     std::function<at::Tensor()> cpu_fallback)
 {
-    // must match the tile sizes defined in the shader - if you change one, change the other!
-    static const uint32_t TILE_N = 128;
-    static const uint32_t TILE_K = 16;
+    const uint32_t TILE_N = 128;
+    const uint32_t TILE_K = 16;
+    const uint32_t WG = 16;
 
-    at::Tensor self = self_;
-    at::Tensor other = other_;
     uint32_t has_bias = (bias_.defined() && beta.toDouble() != 0.0) ? 1 : 0;
-    
-    bool self_unsqueezed = false;
-    bool other_unsqueezed = false;
+    MatmulShape shape = get_matmul_shape(self_, other_);
+    uint32_t M = shape.M, K = shape.K, N = shape.N;
+    int64_t B = shape.B;
 
-    if (self.dim() < 2) {
-        self = self.unsqueeze(0);
-        self_unsqueezed = true;
-    }
-    if (other.dim() < 2) {
-        other = other.unsqueeze(1);
-        other_unsqueezed = true;
-    }
-
-    TORCH_CHECK(self.size(-1) == other.size(-2), "torchvulkan: inner dimensions must match");
-
-    uint32_t M = self.size(-2);
-    uint32_t K = self.size(-1);
-    uint32_t N = other.size(-1);
-
-    at::IntArrayRef self_batch = self.sizes().slice(0, self.dim() - 2);
-    at::IntArrayRef other_batch = other.sizes().slice(0, other.dim() - 2);
-    std::vector<int64_t> batch_shape = at::infer_size(self_batch, other_batch);
-
-    int64_t B = 1;
-    for (int64_t s : batch_shape) {
-        B *= s;
-    }
-
-    std::vector<int64_t> out_shape_vec = batch_shape;
-    out_shape_vec.push_back(M);
-    out_shape_vec.push_back(N);
-    at::IntArrayRef out_shape(out_shape_vec);
-
-    c10::ScalarType result_dtype = at::result_type(self, other);
-    if (!is_dtype_supported(result_dtype)) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", result_dtype, ". Falling back to CPU.");
+    DeviceContext* device = get_device_context(self_);
+    c10::ScalarType result_dtype = at::result_type(shape.self, shape.other);
+    if (!is_dtype_supported(device, result_dtype) || WG * WG > device->properties.limits.maxComputeWorkGroupInvocations) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: A ", result_dtype, " matmul can't run on the Vulkan device. Falling back to CPU.");
         return cpu_fallback();
     }
 
@@ -156,7 +182,6 @@ at::Tensor dispatch_matmul_simd_shader(
         "torchvulkan [ERROR]: gelu is only defined for floating point matmuls, not ", result_dtype
     );
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     uint32_t max_shared_memory = device->properties.limits.maxComputeSharedMemorySize;
     auto shared_bytes = [&](uint32_t tile_m) {
         return c10::elementSize(compute_type) * ((tile_m * (TILE_K + 1)) + (TILE_K * TILE_N));
@@ -170,85 +195,81 @@ at::Tensor dispatch_matmul_simd_shader(
         return cpu_fallback();
     }
 
-    MatmulOperands ops = prepare_matmul_operands(self, other, bias_, has_bias, result_dtype, M, K, N, B, batch_shape);
-    at::Tensor self_b = ops.self_b;
-    at::Tensor other_b = ops.other_b;
-    at::Tensor bias_b = ops.bias_b;
+    MatmulOperands ops = prepare_matmul_operands(shape.self, shape.other, bias_, has_bias, result_dtype, M, K, N, B, shape.batch_shape);
+    at::Tensor out = at::empty({B, M, N}, ops.self_b.options());
 
-    at::Tensor out = at::empty({B, M, N}, self_b.options());
-    if (beta.toFloat() == 0) out.zero_();
-
-    if (M == 0 || N == 0 || B == 0) return out.reshape(out_shape);
+    if (M == 0 || N == 0 || B == 0) return finish_matmul_output(out, shape);
     if (K == 0) {
-        at::Tensor result = has_bias ? (bias_b * beta) : out.zero_();
-        return apply_matmul_activation(result, activation).reshape(out_shape);
+        at::Tensor result = has_bias ? (ops.bias_b * beta) : out.zero_();
+        return finish_matmul_output(apply_matmul_activation(result, activation), shape);
+    }
+    if (!fits_matmul_indexing(ops, out)) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: A matmul is too large for 32-bit indexing. Falling back to CPU.");
+        return cpu_fallback();
     }
 
     torchvulkan::Kernel kernel = tile_m == 128 ? torchvulkan::Kernel::MATMUL_SIMD_128 : torchvulkan::Kernel::MATMUL_SIMD_64;
-    ShaderKey shader_key{kernel, result_dtype};
     uint32_t vecSize = get_dtype_vec_size(result_dtype);
-
-    uint32_t workgroupSizeX = 16; 
-    uint32_t workgroupSizeY = 16; 
-    uint32_t isBiasAligned = has_bias ? bias_b.is_contiguous() : 1;
+    uint32_t isBiasAligned = has_bias ? ops.bias_b.is_contiguous() : 1;
     uint32_t isAligned = (K % vecSize == 0) && (N % vecSize == 0) &&
-                         self_b.is_contiguous() && other_b.is_contiguous() && isBiasAligned;
+                         ops.self_b.is_contiguous() && ops.other_b.is_contiguous() && isBiasAligned;
 
     SpecializationBuilder spd{};
-    spd.push(workgroupSizeX)
-       .push(workgroupSizeY)
+    spd.push(WG)
+       .push(WG)
        .push(isAligned)
        .push(has_bias)
        .push(static_cast<uint32_t>(activation));
     SpecializationArgs specialization = spd.build();
 
-    uint32_t strides_a[4] = {static_cast<uint32_t>(self_b.stride(0)), static_cast<uint32_t>(self_b.stride(1)), static_cast<uint32_t>(self_b.stride(2)), 0};
-    uint32_t strides_b[4] = {static_cast<uint32_t>(other_b.stride(0)), static_cast<uint32_t>(other_b.stride(1)), static_cast<uint32_t>(other_b.stride(2)), 0};
-    uint32_t strides_c[4] = {static_cast<uint32_t>(out.stride(0)), static_cast<uint32_t>(out.stride(1)), static_cast<uint32_t>(out.stride(2)), 0};
+    auto strides_of = [](const at::Tensor& t, uint32_t (&strides)[4]) {
+        for (int i = 0; i < 3; i++) strides[i] = static_cast<uint32_t>(t.stride(i));
+        strides[3] = 0;
+    };
+    uint32_t strides_a[4], strides_b[4], strides_c[4];
     uint32_t strides_bias[4] = {0, 0, 0, 0};
-    if (has_bias) {strides_bias[0] = static_cast<uint32_t>(bias_b.stride(0)); strides_bias[1] = static_cast<uint32_t>(bias_b.stride(1)); strides_bias[2] = static_cast<uint32_t>(bias_b.stride(2));}
+    strides_of(ops.self_b, strides_a);
+    strides_of(ops.other_b, strides_b);
+    strides_of(out, strides_c);
+    if (has_bias) strides_of(ops.bias_b, strides_bias);
 
-    PushConstantBuilder pcs{};
-    pcs.push(get_tensor_address(self_b));
-    pcs.push(get_tensor_address(other_b));
-    pcs.push(get_tensor_address(out));
-    pcs.push(has_bias ? get_tensor_address(bias_b) : (uint64_t)0); // the shader only reads the bias when it exists
-    pcs.push_array(strides_a);
-    pcs.push_array(strides_b);
-    pcs.push_array(strides_c);
-    pcs.push_array(strides_bias);
-    pcs.push(M);
-    pcs.push(N);
-    pcs.push(K);
-    pcs.push((uint32_t)0);
-    pcs.push_scalar(alpha, compute_type);
-    pcs.push_scalar(beta, compute_type);
-    
-    uint32_t groupX = (N + TILE_N - 1) / TILE_N;
-    uint32_t groupY = (M + tile_m - 1) / tile_m;
-    uint32_t groupZ = static_cast<uint32_t>(B);
+    std::vector<at::Tensor> readTensors = {ops.self_b, ops.other_b};
+    if (has_bias) readTensors.push_back(ops.bias_b);
 
-    std::vector<at::Tensor> readTensors = {self_b, other_b};
-    if (has_bias) readTensors.push_back(bias_b);
+    // the batch is the grid's z dimension, so it goes in chunks of the device's limit
+    const int64_t max_batch = device->properties.limits.maxComputeWorkGroupCount[2];
+    for (int64_t b0 = 0; b0 < B; b0 += max_batch)
+    {
+        int64_t batch = std::min(max_batch, B - b0);
+        auto address_at = [&](const at::Tensor& t) { return get_tensor_address(t) + b0 * t.stride(0) * t.element_size(); };
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
-    device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ readTensors,
-        /* write = */ {out},
-        groupX, groupY, groupZ
-    );
+        PushConstantBuilder pcs{};
+        pcs.push(address_at(ops.self_b));
+        pcs.push(address_at(ops.other_b));
+        pcs.push(address_at(out));
+        pcs.push(has_bias ? address_at(ops.bias_b) : (uint64_t)0); // the shader only reads the bias when it exists
+        pcs.push_array(strides_a);
+        pcs.push_array(strides_b);
+        pcs.push_array(strides_c);
+        pcs.push_array(strides_bias);
+        pcs.push(M);
+        pcs.push(N);
+        pcs.push(K);
+        pcs.push((uint32_t)0);
+        pcs.push_scalar(alpha, compute_type);
+        pcs.push_scalar(beta, compute_type);
 
-    out = out.reshape(out_shape);
-    if (self_unsqueezed || other_unsqueezed) {
-        if (self_unsqueezed && other_unsqueezed) out = out.squeeze(-1).squeeze(-1); 
-        else if (self_unsqueezed) out = out.squeeze(-2); 
-        else out = out.squeeze(-1); 
+        device->shader_manager->dispatchShader(
+            ShaderKey{kernel, result_dtype},
+            specialization,
+            pcs.build(),
+            /* read = */ readTensors,
+            /* write = */ {out},
+            (N + TILE_N - 1) / TILE_N, (M + tile_m - 1) / tile_m, static_cast<uint32_t>(batch)
+        );
     }
 
-    return out;
+    return finish_matmul_output(out, shape);
 }
 
 torchvulkan::Kernel coop_kernel_for_block_size(uint32_t block_size)
@@ -271,48 +292,30 @@ at::Tensor dispatch_matmul_coop_shader(
     const at::Scalar& beta,
     std::function<at::Tensor()> cpu_fallback)
 {
-    at::Tensor self = self_;
-    at::Tensor other = other_;
-    c10::ScalarType promoted_type = at::result_type(self, other);
-
-    if (!is_dtype_supported(promoted_type)) {
+    DeviceContext* device = get_device_context(self_);
+    c10::ScalarType promoted_type = at::result_type(self_, other_);
+    if (!is_dtype_supported(device, promoted_type)) {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", promoted_type, ". Falling back to CPU.");
         return cpu_fallback();
     }
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
     c10::ScalarType accumulate_type = matmul_accumulate_dtype(promoted_type);
     std::vector<CoopMatConfig> config = device->cache.getCoopMatConfig(promoted_type, promoted_type, accumulate_type, accumulate_type);
     if (config.empty()) return dispatch_matmul_simd_shader(self_, other_, bias_, alpha, beta, MatmulActivation::NONE, cpu_fallback);
-    std::vector<uint32_t> available_block_sizes;
-    available_block_sizes.reserve(config.size());
 
+    std::vector<uint32_t> available_block_sizes;
     for (CoopMatConfig c : config) 
     {
         if (c.m != c.n || c.m != c.k) continue; // we do not support differing block_m and block_n sizes
         available_block_sizes.push_back(c.m);
     }
 
-    bool self_unsqueezed = false;
-    bool other_unsqueezed = false;
+    MatmulShape shape = get_matmul_shape(self_, other_);
+    uint32_t M = shape.M, K = shape.K, N = shape.N;
+    int64_t B = shape.B;
 
-    if (self.dim() < 2) {
-        self = self.unsqueeze(0);
-        self_unsqueezed = true;
-    }
-    if (other.dim() < 2) {
-        other = other.unsqueeze(1);
-        other_unsqueezed = true;
-    }
-
-    TORCH_CHECK(self.size(-1) == other.size(-2), "torchvulkan: inner dimensions must match");
-
-    uint32_t M = self.size(-2);
-    uint32_t K = self.size(-1);
-    uint32_t N = other.size(-1);
-
-    CoopMatParams* params = device->cache.getCoopMatParams(promoted_type, available_block_sizes, M, N);
-    if (!params->is_valid) return dispatch_matmul_simd_shader(self_, other_, bias_, alpha, beta, MatmulActivation::NONE, cpu_fallback);
+    const CoopMatParams& params = device->cache.getCoopMatParams(promoted_type, available_block_sizes, M, N);
+    if (!params.is_valid) return dispatch_matmul_simd_shader(self_, other_, bias_, alpha, beta, MatmulActivation::NONE, cpu_fallback);
 
     if (bias_.defined()) {
         at::Tensor out = dispatch_matmul_coop_shader(self_, other_, {}, alpha, 0, cpu_fallback);
@@ -320,50 +323,16 @@ at::Tensor dispatch_matmul_coop_shader(
         return torchvulkan::add_vulkan(out, bias_.to(out.scalar_type()), beta);
     }
 
-    uint32_t has_alpha = (alpha.toDouble() != 1.0) ? 1 : 0;
-    uint32_t has_bias = (bias_.defined()) ? 1 : 0;
-    uint32_t has_beta = (!has_bias && beta.toDouble() != 0.0) ? 1 : 0;
-    
-    ShaderKey shader_key{coop_kernel_for_block_size(params->block_size), promoted_type};
+    if (M == 0 || N == 0 || B == 0) return finish_matmul_output(at::empty({B, M, N}, self_.options().dtype(promoted_type)), shape);
+    if (K == 0) return finish_matmul_output(at::zeros({B, M, N}, self_.options().dtype(promoted_type)), shape);
 
-    at::IntArrayRef self_batch = self.sizes().slice(0, self.dim() - 2);
-    at::IntArrayRef other_batch = other.sizes().slice(0, other.dim() - 2);
-    std::vector<int64_t> batch_shape = at::infer_size(self_batch, other_batch);
+    const uint32_t tile_m = params.block_size * params.warps_m * params.warp_frags_m;
+    const uint32_t tile_n = params.block_size_acc * params.warps_n * params.warp_frags_n;
 
-    int64_t B = 1;
-    for (int64_t s : batch_shape) {
-        B *= s;
-    }
-
-    std::vector<int64_t> out_shape_vec = batch_shape;
-    out_shape_vec.push_back(M);
-    out_shape_vec.push_back(N);
-    at::IntArrayRef out_shape(out_shape_vec);
-
-    if (M == 0 || N == 0 || B == 0) return at::empty({B, M, N}, self_.options()).reshape(out_shape);
-    if (K == 0) {
-        if (!has_bias) return at::zeros({B, M, N}, self_.options().dtype(promoted_type)).reshape(out_shape);
-        std::vector<int64_t> bias_expand_shape(batch_shape);
-        bias_expand_shape.push_back(M);
-        bias_expand_shape.push_back(N);
-        at::Tensor bias_b = bias_.to(promoted_type).expand(bias_expand_shape).reshape({B, M, N});
-        return (bias_b * beta).reshape(out_shape);
-    }
-
-    const uint32_t tile_m = params->block_size * params->warps_m * params->warp_frags_m;
-    const uint32_t tile_n = params->block_size_acc * params->warps_n * params->warp_frags_n;
-
-    // might be better ways than to just hardcode this
     const uint32_t target_grid = 512;
     uint32_t grid = ((M + tile_m - 1) / tile_m) * ((N + tile_n - 1) / tile_n) * (uint32_t)B;
     uint32_t split = 1;
-    if (
-        B == 1 && 
-        grid < target_grid && 
-        K >= 4096 && 
-        self.storage_offset() == 0 && 
-        other.storage_offset() == 0
-    ) {
+    if (promoted_type == accumulate_type && B == 1 && grid < target_grid && K >= 4096) {
         while (
             split * 2 * grid <= target_grid && (K % (split * 2)) == 0 &&
             ((K / (split * 2)) % 64) == 0 && (K / (split * 2)) >= 512
@@ -373,8 +342,8 @@ at::Tensor dispatch_matmul_coop_shader(
     }
 
     if (split > 1) {
-        at::Tensor a2 = self.reshape({(int64_t)M, (int64_t)K});
-        at::Tensor b2 = other.reshape({(int64_t)K, (int64_t)N});
+        at::Tensor a2 = shape.self.reshape({(int64_t)M, (int64_t)K});
+        at::Tensor b2 = shape.other.reshape({(int64_t)K, (int64_t)N});
         int64_t ks = K / split;
         at::Tensor a_chunks = a2.as_strided({split, (int64_t)M, ks}, {ks * a2.stride(1), a2.stride(0), a2.stride(1)});
         at::Tensor b_chunks = b2.as_strided({split, ks, (int64_t)N}, {ks * b2.stride(0), b2.stride(0), b2.stride(1)});
@@ -383,116 +352,95 @@ at::Tensor dispatch_matmul_coop_shader(
         for (int64_t s = split / 2; s >= 1; s /= 2) {
             partial = torchvulkan::add_vulkan(partial.narrow(0, 0, s), partial.narrow(0, s, s), 1);
         }
-
-        at::Tensor out = partial.reshape(out_shape);
-        if (self_unsqueezed && other_unsqueezed) out = out.squeeze(-1).squeeze(-1);
-        else if (self_unsqueezed) out = out.squeeze(-2);
-        else if (other_unsqueezed) out = out.squeeze(-1);
-        return out;
+        return finish_matmul_output(partial, shape);
     }
 
-    MatmulOperands ops = prepare_matmul_operands(self, other, bias_, has_bias, promoted_type, M, K, N, B, batch_shape);
-    at::Tensor self_b = ops.self_b;
-    at::Tensor other_b = ops.other_b;
-    at::Tensor bias_b = ops.bias_b;
+    MatmulOperands ops = prepare_matmul_operands(shape.self, shape.other, at::Tensor(), false, promoted_type, M, K, N, B, shape.batch_shape);
+
     uint32_t M_padded = ((M + tile_m - 1) / tile_m) * tile_m;
     uint32_t N_padded = ((N + tile_n - 1) / tile_n) * tile_n;
-    at::Tensor out = at::empty({B, M_padded, N_padded}, self_b.options());
-
-    uint32_t strides_a[4] = {static_cast<uint32_t>(self_b.stride(0)), static_cast<uint32_t>(self_b.stride(1)), static_cast<uint32_t>(self_b.stride(2)), 0};
-    uint32_t strides_b[4] = {static_cast<uint32_t>(other_b.stride(0)), static_cast<uint32_t>(other_b.stride(1)), static_cast<uint32_t>(other_b.stride(2)), 0};
-    uint32_t strides_out[4] = {static_cast<uint32_t>(out.stride(0)), static_cast<uint32_t>(out.stride(1)), static_cast<uint32_t>(out.stride(2)), 0};
-    uint32_t strides_bias[4] = {0, 0, 0, 0};
-    if (has_bias) {strides_bias[0] = static_cast<uint32_t>(bias_b.stride(0)); strides_bias[1] = static_cast<uint32_t>(bias_b.stride(1)); strides_bias[2] = static_cast<uint32_t>(bias_b.stride(2));}
-
-    uint32_t self_transposed = (self_b.stride(-1) != 1 && self_b.stride(-2) == 1) ? 1 : 0;
-    uint32_t other_transposed = (other_b.stride(-1) != 1 && other_b.stride(-2) == 1) ? 1 : 0;
-    uint32_t out_transposed = (out.stride(-1) != 1 && out.stride(-2) == 1) ? 1 : 0;
-    uint32_t bias_transposed = (has_bias && bias_b.stride(-1) != 1 && bias_b.stride(-2) == 1) ? 1 : 0;
-
-    uint32_t m_aligned = (M % tile_m == 0) ? 1 : 0;
-    uint32_t n_aligned = (N % tile_n == 0) ? 1 : 0;
+    at::Tensor out = at::empty({B, M_padded, N_padded}, ops.self_b.options());
 
     auto coop_loadable = [](const at::Tensor& t) { return t.stride(-1) == 1 || t.stride(-2) == 1; };
-    if (!coop_loadable(self_b) || !coop_loadable(other_b) || !coop_loadable(out) ||
-        (has_bias && !coop_loadable(bias_b))) {
+    if (!coop_loadable(ops.self_b) || !coop_loadable(ops.other_b) || !fits_32bit_indexing({ops.self_b, ops.other_b, out})) {
         return dispatch_matmul_simd_shader(self_, other_, bias_, alpha, beta, MatmulActivation::NONE, cpu_fallback);
     }
-    
-    PushConstantBuilder pcs{};
-    pcs.push(get_tensor_address(self_b))
-       .push(get_tensor_address(other_b))
-       .push(get_tensor_address(out))
-       .push(has_bias ? get_tensor_address(bias_b) : (uint64_t)0) // the shader only reads the bias when it exists
-       .push_array(strides_a)
-       .push_array(strides_b)
-       .push_array(strides_out)
-       .push_array(strides_bias)
-       .push(M)
-       .push(N)
-       .push(K)
-       .push((uint32_t)0) // padding
-       .push_scalar(alpha, accumulate_type)
-       .push_scalar(beta, accumulate_type);
+
+    auto strides_of = [](const at::Tensor& t, uint32_t (&strides)[4]) {
+        for (int i = 0; i < 3; i++) strides[i] = static_cast<uint32_t>(t.stride(i));
+        strides[3] = 0;
+    };
+    uint32_t strides_a[4], strides_b[4], strides_out[4];
+    uint32_t strides_bias[4] = {0, 0, 0, 0};
+    strides_of(ops.self_b, strides_a);
+    strides_of(ops.other_b, strides_b);
+    strides_of(out, strides_out);
+
+    uint32_t self_transposed = (ops.self_b.stride(-1) != 1 && ops.self_b.stride(-2) == 1) ? 1 : 0;
+    uint32_t other_transposed = (ops.other_b.stride(-1) != 1 && ops.other_b.stride(-2) == 1) ? 1 : 0;
 
     const uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t a_vec_aligned = (!self_transposed &&
-                        strides_a[1] % vecSize == 0 &&
-                        strides_a[0] % vecSize == 0 &&
-                        params->bk % vecSize == 0) ? 1 : 0;
-    uint32_t b_vec_aligned = (!other_transposed &&
-                        strides_b[1] % vecSize == 0 &&
-                        strides_b[0] % vecSize == 0) ? 1 : 0;
+    uint32_t a_vec_aligned = (!self_transposed && strides_a[1] % vecSize == 0 && strides_a[0] % vecSize == 0 && params.bk % vecSize == 0) ? 1 : 0;
+    uint32_t b_vec_aligned = (!other_transposed && strides_b[1] % vecSize == 0 && strides_b[0] % vecSize == 0) ? 1 : 0;
 
     SpecializationBuilder spd{};
-    spd.push(params->workgroup_size)
-       .push(params->subgroup_size)
-       .push(params->warps_m)
-       .push(params->warps_n)
-       .push(params->warp_frags_m)
-       .push(params->warp_frags_n)
-       .push(params->bk)
-       .push(has_alpha)
-       .push(has_beta)
-       .push(has_bias)
+    spd.push(params.workgroup_size)
+       .push(params.subgroup_size)
+       .push(params.warps_m)
+       .push(params.warps_n)
+       .push(params.warp_frags_m)
+       .push(params.warp_frags_n)
+       .push(params.bk)
+       .push(static_cast<uint32_t>(alpha.toDouble() != 1.0))
+       .push(uint32_t(0)) // HAS_BETA
+       .push(uint32_t(0)) // HAS_BIAS
        .push(self_transposed)
        .push(other_transposed)
-       .push(out_transposed)
-       .push(bias_transposed)
-       .push(m_aligned)
-       .push(n_aligned)
+       .push(uint32_t(0)) // OUT_TRANSPOSED
+       .push(uint32_t(0)) // BIAS_TRANSPOSED
+       .push(static_cast<uint32_t>(M % tile_m == 0))
+       .push(static_cast<uint32_t>(N % tile_n == 0))
        .push(a_vec_aligned)
        .push(b_vec_aligned)
-       .push(params->block_size)
-       .push(static_cast<uint32_t>(params->use_shared_memory));
+       .push(params.block_size)
+       .push(static_cast<uint32_t>(params.use_shared_memory));
     SpecializationArgs specialization = spd.build();
 
-    uint32_t groupX = N_padded / tile_n;
-    uint32_t groupY = M_padded / tile_m;
-    uint32_t groupZ = B;
+    const int64_t max_batch = device->properties.limits.maxComputeWorkGroupCount[2];
+    for (int64_t b0 = 0; b0 < B; b0 += max_batch)
+    {
+        int64_t batch = std::min(max_batch, B - b0);
+        auto address_at = [&](const at::Tensor& t) { return get_tensor_address(t) + b0 * t.stride(0) * t.element_size(); };
 
-    std::vector<at::Tensor> readTensors = {self_b, other_b};
-    if (has_bias) readTensors.push_back(bias_b);
+        PushConstantBuilder pcs{};
+        pcs.push(address_at(ops.self_b))
+           .push(address_at(ops.other_b))
+           .push(address_at(out))
+           .push((uint64_t)0) // no bias
+           .push_array(strides_a)
+           .push_array(strides_b)
+           .push_array(strides_out)
+           .push_array(strides_bias)
+           .push(M)
+           .push(N)
+           .push(K)
+           .push((uint32_t)0) // padding
+           .push_scalar(alpha, accumulate_type)
+           .push_scalar(0, accumulate_type);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
-    device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ readTensors,
-        /* write = */ {out},
-        groupX, groupY, groupZ
-    );
-
-    out = out.narrow(1, 0, M).narrow(2, 0, N);
-    out = out.reshape(out_shape);
-    if (self_unsqueezed || other_unsqueezed) {
-        if (self_unsqueezed && other_unsqueezed) out = out.squeeze(-1).squeeze(-1); 
-        else if (self_unsqueezed) out = out.squeeze(-2); 
-        else out = out.squeeze(-1); 
+        device->shader_manager->dispatchShader(
+            ShaderKey{coop_kernel_for_block_size(params.block_size), promoted_type},
+            specialization,
+            pcs.build(),
+            /* read = */ {ops.self_b, ops.other_b},
+            /* write = */ {out},
+            N_padded / tile_n, M_padded / tile_m, static_cast<uint32_t>(batch)
+        );
     }
 
-    return out;
+    // torch returns matmul results contiguous, so a padded result is compacted
+    if (M_padded != M || N_padded != N) out = out.narrow(1, 0, M).narrow(2, 0, N).contiguous();
+    return finish_matmul_output(out, shape);
 }
 
 at::Tensor dispatch_matmul_shader(
@@ -504,7 +452,7 @@ at::Tensor dispatch_matmul_shader(
     MatmulActivation activation,
     std::function<at::Tensor()> cpu_fallback)
 {
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = get_device_context(self);
 
     if (device->support_coopmat) {
         at::Tensor out = dispatch_matmul_coop_shader(self, other, bias, alpha, beta, cpu_fallback);

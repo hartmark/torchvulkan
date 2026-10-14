@@ -157,37 +157,19 @@ static uint32_t coop_config_key(uint8_t a, uint8_t b, uint8_t c, uint8_t result)
 
 void VulkanCache::addCoopMatConfig(VkComponentTypeKHR aType, VkComponentTypeKHR bType, VkComponentTypeKHR cType, VkComponentTypeKHR resultType, CoopMatConfig config)
 {
-    auto comp_to_scalar = [](VkComponentTypeKHR dtype) -> uint8_t {
-        switch(dtype) {
-            case VK_COMPONENT_TYPE_FLOAT16_KHR: return static_cast<uint8_t>(at::ScalarType::Half);
-            case VK_COMPONENT_TYPE_FLOAT32_KHR: return static_cast<uint8_t>(at::ScalarType::Float);
-            case VK_COMPONENT_TYPE_FLOAT64_KHR: return static_cast<uint8_t>(at::ScalarType::Double);
-            case COMPONENT_TYPE_BFLOAT16:       return static_cast<uint8_t>(at::ScalarType::BFloat16);
-            case VK_COMPONENT_TYPE_SINT8_KHR:   return static_cast<uint8_t>(at::ScalarType::Char);
-            case VK_COMPONENT_TYPE_SINT16_KHR:  return static_cast<uint8_t>(at::ScalarType::Short);
-            case VK_COMPONENT_TYPE_SINT32_KHR:  return static_cast<uint8_t>(at::ScalarType::Int);
-            case VK_COMPONENT_TYPE_SINT64_KHR:  return static_cast<uint8_t>(at::ScalarType::Long);
-            case VK_COMPONENT_TYPE_UINT8_KHR:   return static_cast<uint8_t>(at::ScalarType::Byte);
-            case VK_COMPONENT_TYPE_UINT16_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt16);
-            case VK_COMPONENT_TYPE_UINT32_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt32);
-            case VK_COMPONENT_TYPE_UINT64_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt64);
-            default:                            return static_cast<uint8_t>(c10::ScalarType::Undefined);
-        }
-    };
-    
-    uint32_t key = (comp_to_scalar(aType) << 24) | (comp_to_scalar(bType) << 16) | (comp_to_scalar(cType) << 8) | comp_to_scalar(resultType);
+    uint32_t key = coop_config_key(coop_component_to_scalar(aType), coop_component_to_scalar(bType), coop_component_to_scalar(cType), coop_component_to_scalar(resultType));
     coopMatCache[key].push_back(config);
 }
 
 std::vector<CoopMatConfig> VulkanCache::getCoopMatConfig(c10::ScalarType aType, c10::ScalarType bType, c10::ScalarType cType, c10::ScalarType resultType) const
 {
-    uint32_t key = (static_cast<uint8_t>(aType) << 24) | (static_cast<uint8_t>(bType) << 16) | (static_cast<uint8_t>(cType) << 8) | static_cast<uint8_t>(resultType);
+    uint32_t key = coop_config_key(static_cast<uint8_t>(aType), static_cast<uint8_t>(bType), static_cast<uint8_t>(cType), static_cast<uint8_t>(resultType));
     auto it = coopMatCache.find(key);
     if (it != coopMatCache.end()) return it->second;
-    else return {};
+    return {};
 }
 
-CoopMatParams* VulkanCache::getCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N)
+const CoopMatParams& VulkanCache::getCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N)
 {
     auto bucket = [](uint32_t x) -> uint64_t {
         uint64_t b = 1;
@@ -195,32 +177,29 @@ CoopMatParams* VulkanCache::getCoopMatParams(c10::ScalarType dtype, const std::v
         return b;
     };
 
-    if (M == 0) M = 1;
-    if (N == 0) N = 1;
+    // available_sizes depends only on the dtype, so it does not need to be part of the key
+    const uint64_t key = (uint64_t)(uint8_t)dtype | (bucket(std::max(M, 1u)) << 16) | (bucket(std::max(N, 1u)) << 32);
 
-    const uint64_t key = (uint64_t)(uint32_t)dtype | (bucket(M) << 16) | (bucket(N) << 32);
-
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = coopMatParamCache.find(key);
-    if (it != coopMatParamCache.end()) return &it->second;
+    if (it != coopMatParamCache.end()) return it->second;
+    return coopMatParamCache.emplace(key, searchCoopMatParams(dtype, available_sizes, std::max(M, 1u), std::max(N, 1u))).first->second;
+}
 
-    CoopMatParams& coopmat_params = coopMatParamCache[key];
-    coopmat_params.is_valid = false;
+// picks a tiling for matmul_coop: the smallest BK whose tile fits shared memory, preferring
+// tiles no more than twice the problem size, then the least padding
+CoopMatParams VulkanCache::searchCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N) const
+{
+    CoopMatParams params{};
 
     uint32_t element_size = c10::elementSize(dtype);
-    uint32_t pad = 4;
-    
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t max_shared_memory = device->properties.limits.maxComputeSharedMemorySize;
-    uint32_t max_workgroup_size = device->properties.limits.maxComputeWorkGroupInvocations;
-    coopmat_params.subgroup_size = device->subgroup_size;
+    uint32_t max_shared_memory = owner_->properties.limits.maxComputeSharedMemorySize;
+    uint32_t max_workgroup_size = owner_->properties.limits.maxComputeWorkGroupInvocations;
+    params.subgroup_size = owner_->subgroup_size;
+    if (params.subgroup_size == 0) return params;
 
-    const uint32_t target_subgroups = 8;
-    uint32_t max_subgroups = target_subgroups;
-    if (max_subgroups * coopmat_params.subgroup_size > max_workgroup_size) {
-        max_subgroups = max_workgroup_size / coopmat_params.subgroup_size;
-    }
-    if (max_subgroups == 0) return &coopmat_params;
-    coopmat_params.workgroup_size = max_subgroups * coopmat_params.subgroup_size;
+    uint32_t max_subgroups = std::min<uint32_t>(8, max_workgroup_size / params.subgroup_size);
+    if (max_subgroups == 0) return params;
 
     static constexpr std::array<uint32_t, 4> pref_1_byte = {64, 32, 16, 8};
     static constexpr std::array<uint32_t, 4> pref_2_byte = {32, 64, 16, 8};
@@ -234,109 +213,78 @@ CoopMatParams* VulkanCache::getCoopMatParams(c10::ScalarType dtype, const std::v
         case 2: preferences = &pref_2_byte; break;
         case 4: preferences = &pref_4_byte; break;
         case 8: preferences = &pref_8_byte; break;
-        default: return &coopmat_params;
+        default: return params;
     }
 
     for (uint32_t pref : *preferences)
     {
-        if (std::find(available_sizes.begin(), available_sizes.end(), pref) != available_sizes.end()) 
-        {
-            coopmat_params.block_size = pref;
-            coopmat_params.block_size_acc = pref;
-            break;
-        }
+        if (std::find(available_sizes.begin(), available_sizes.end(), pref) == available_sizes.end()) continue;
+        params.block_size = pref;
+        params.block_size_acc = pref;
+        break;
     }
+    if (params.block_size == 0) return params;
 
-    if (coopmat_params.block_size == 0) return &coopmat_params;
-
-    #if __APPLE__
-    coopmat_params.use_shared_memory = false;
-    #else
-    coopmat_params.use_shared_memory = true;
-    #endif
+    // MoltenVK's cooperative matrices load fastest straight from device memory; the autotuner will replace this
+    params.use_shared_memory = owner_->driver_id != VK_DRIVER_ID_MOLTENVK;
 
     // mirrors the Shared<T> sizes in src/shaders/ops/matmul_coop.slang
     auto shared_bytes = [&](uint64_t rows_a, uint64_t cols_b, uint32_t bk) -> uint64_t
     {
-        if (coopmat_params.use_shared_memory) return 2 * (rows_a * (bk + pad) + (uint64_t)bk * (cols_b + pad)) * element_size;
+        const uint64_t pad = 4; // PAD in matmul_coop.slang
+        if (params.use_shared_memory) return 2 * (rows_a * (bk + pad) + (uint64_t)bk * (cols_b + pad)) * element_size;
         return (rows_a * bk + (uint64_t)bk * cols_b) * element_size;
     };
 
+    struct Candidate {
+        uint32_t subgroups, warps_m, warps_n, frags_m, frags_n;
+    };
+
+    // every way to split up to max_subgroups subgroups into a warps_m x warps_n grid, each with a fragment shape
     static constexpr uint32_t frag_preferences[4][2] = {{4, 2}, {2, 4}, {4, 4}, {2, 2}};
-    const uint64_t overshoot_limit = 2;
-    bool tiling_fits = false;
-
-    // this is a bit tragic but it works
-    for (int pass = 0; pass < 2 && !tiling_fits; ++pass)
+    std::vector<Candidate> candidates;
+    for (uint32_t subgroups = max_subgroups; subgroups >= 1; subgroups /= 2)
     {
-        uint64_t best_waste = UINT64_MAX;
-        for (uint32_t bk = coopmat_params.block_size_acc; bk <= 64; bk *= 2)
+        for (uint32_t wm = (uint32_t)std::sqrt((double)subgroups); wm >= 1; --wm)
         {
-            for (uint32_t subgroups = max_subgroups; subgroups >= 1; subgroups /= 2)
-            {
-                for (uint32_t wm = (uint32_t)std::sqrt((double)subgroups); wm >= 1; --wm)
-                {
-                    if (subgroups % wm) continue;
-                    for (uint32_t warps_m : {wm, subgroups / wm})
-                    {
-                        const uint32_t warps_n = subgroups / warps_m;
-                        for (const auto& frags : frag_preferences)
-                        {
-                            const uint64_t rows_a = (uint64_t)warps_m * frags[0] * coopmat_params.block_size;
-                            const uint64_t cols_b = (uint64_t)warps_n * frags[1] * coopmat_params.block_size;
-
-                            if (shared_bytes(rows_a, cols_b, bk) > max_shared_memory) continue;
-                            if (pass == 0 && (rows_a > overshoot_limit * M || cols_b > overshoot_limit * N)) continue;
-
-                            const uint64_t pm = ((M + rows_a - 1) / rows_a) * rows_a;
-                            const uint64_t pn = ((N + cols_b - 1) / cols_b) * cols_b;
-                            const uint64_t waste = (pass == 0) ? 0 : (pm * pn * 1024) / ((uint64_t)M * N);
-
-                            if (waste >= best_waste) continue;
-                            best_waste = waste;
-                            coopmat_params.workgroup_size = subgroups * coopmat_params.subgroup_size;
-                            coopmat_params.warps_m = warps_m;
-                            coopmat_params.warps_n = warps_n;
-                            coopmat_params.warp_frags_m = frags[0];
-                            coopmat_params.warp_frags_n = frags[1];
-                            coopmat_params.bk = bk;
-                            tiling_fits = true;
-                        }
-                    }
-                }
+            if (subgroups % wm) continue;
+            for (uint32_t warps_m : {wm, subgroups / wm}) {
+                for (const auto& frags : frag_preferences) candidates.push_back({subgroups, warps_m, subgroups / warps_m, frags[0], frags[1]});
             }
-            if (tiling_fits) break;  // smallest workable BK wins
         }
     }
 
-    if (!tiling_fits) return &coopmat_params;
+    const uint64_t overshoot_limit = 2;
+    for (bool allow_overshoot : {false, true})
+    {
+        for (uint32_t bk = params.block_size_acc; bk <= 64; bk *= 2)
+        {
+            uint64_t best_waste = UINT64_MAX;
+            for (const Candidate& c : candidates)
+            {
+                const uint64_t rows_a = (uint64_t)c.warps_m * c.frags_m * params.block_size;
+                const uint64_t cols_b = (uint64_t)c.warps_n * c.frags_n * params.block_size;
 
-    coopmat_params.is_valid = true;
-    return &coopmat_params;
-}
+                if (shared_bytes(rows_a, cols_b, bk) > max_shared_memory) continue;
+                if (!allow_overshoot && (rows_a > overshoot_limit * M || cols_b > overshoot_limit * N)) continue;
 
-void VulkanCache::clearCache()
-{
-    if (device_ == VK_NULL_HANDLE) return;
-    DeviceContext* ctx = VulkanContext::Instance().CurrentDeviceContext();
+                const uint64_t pm = ((M + rows_a - 1) / rows_a) * rows_a;
+                const uint64_t pn = ((N + cols_b - 1) / cols_b) * cols_b;
+                const uint64_t waste = allow_overshoot ? (pm * pn * 1024) / ((uint64_t)M * N) : 0;
+                if (waste >= best_waste) continue;
 
-    for (VkFence fence : fencePool) device_table.vkDestroyFence(device_, fence, nullptr);
-    fencePool.clear();
-
-    for (size_t i = 0; i < NUM_BINS; ++i) {
-        for (VulkanBuffer* buffer : deviceBufferPool[i]) {
-            delete buffer;
+                best_waste = waste;
+                params.workgroup_size = c.subgroups * params.subgroup_size;
+                params.warps_m = c.warps_m;
+                params.warps_n = c.warps_n;
+                params.warp_frags_m = c.frags_m;
+                params.warp_frags_n = c.frags_n;
+                params.bk = bk;
+                params.is_valid = true;
+            }
+            if (params.is_valid) return params;
         }
-        deviceBufferPool[i].clear();
-
-        for (VulkanBuffer* buffer : stagingBufferPool[i]) {
-            delete buffer;
-        }
-        stagingBufferPool[i].clear();
     }
 
-    if (!commandBufferPool.empty()) {
-        device_table.vkFreeCommandBuffers(device_, ctx->commandPool, static_cast<uint32_t>(commandBufferPool.size()), commandBufferPool.data());
-        commandBufferPool.clear();
-    }
+    return params;
 }
