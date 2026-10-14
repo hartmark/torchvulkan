@@ -47,11 +47,6 @@ at::Tensor reduce_loss(const at::Tensor& t, int64_t reduction)
     return t;
 }
 
-at::Tensor gt_mask(const at::Tensor& v)
-{
-    return at::clamp(at::sign(v), 0, 1);
-}
-
 at::Tensor dot_vulkan(const at::Tensor& self, const at::Tensor& other)
 {
     at::ScalarType odt = self.scalar_type();
@@ -94,7 +89,8 @@ at::Tensor& renorm_out_vulkan(const at::Tensor& self, const at::Scalar& p, int64
     for (int64_t i = 0; i < self.dim(); i++) if (i != d) rdims.push_back(i);
 
     at::Tensor norms = p_norm(self, p.toDouble(), rdims, /*keepdim=*/true);
-    at::Tensor factor = at::clamp_max(at::mul(at::reciprocal(at::add(norms, 1e-7)), maxnorm.toDouble()), 1.0);
+    at::Tensor scaled = at::mul(at::reciprocal(at::add(norms, 1e-7)), maxnorm.toDouble());
+    at::Tensor factor = at::where(at::gt(norms, maxnorm), scaled, at::ones_like(scaled));
     return fill_out(out, at::mul(self, factor));
 }
 
@@ -106,16 +102,12 @@ at::Tensor& softshrink_out_vulkan(const at::Tensor& self, const at::Scalar& lamb
 
 at::Tensor& hardshrink_out_vulkan(const at::Tensor& self, const at::Scalar& lambd, at::Tensor& out)
 {
-    at::Tensor mask = gt_mask(at::sub(at::abs(self), lambd));
-    return fill_out(out, at::mul(self, mask));
+    return fill_out(out, at::where(at::le(at::abs(self), lambd), at::zeros_like(self), self));
 }
 
 at::Tensor& threshold_out_vulkan(const at::Tensor& self, const at::Scalar& threshold, const at::Scalar& value, at::Tensor& out)
 {
-    at::Tensor s = at::isIntegralType(self.scalar_type(), /*includeBool=*/true) ? self.to(at::kFloat) : self;
-    at::Tensor mask = gt_mask(at::sub(s, threshold));
-    at::Tensor res = at::add(at::mul(mask, s), at::mul(at::rsub(mask, 1), value));
-    return fill_out(out, res);
+    return fill_out(out, at::where(at::le(self, threshold), at::scalar_tensor(value, self.options()), self));
 }
 
 at::Tensor& glu_out_vulkan(const at::Tensor& self, int64_t dim, at::Tensor& out)
@@ -135,7 +127,7 @@ at::Tensor prelu_vulkan(const at::Tensor& self, const at::Tensor& weight)
         vshape[1] = weight.numel();
         w = weight.view(vshape);
     }
-    return at::add(at::clamp_min(self, 0), at::mul(w, at::clamp_max(self, 0)));
+    return at::where(at::gt(self, 0), self, at::mul(w, self));
 }
 
 std::tuple<at::Tensor, at::Tensor> log_sigmoid_forward_vulkan(const at::Tensor& self)
@@ -151,9 +143,7 @@ at::Tensor huber_loss_vulkan(const at::Tensor& self, const at::Tensor& target, i
     at::Tensor absd = at::abs(d);
     at::Tensor quad = at::mul(at::mul(d, d), 0.5);
     at::Tensor lin = at::mul(at::sub(absd, 0.5 * delta), delta);
-    at::Tensor mask = gt_mask(at::sub(absd, delta));
-    at::Tensor loss = at::add(at::mul(at::rsub(mask, 1), quad), at::mul(mask, lin));
-    return reduce_loss(loss, reduction);
+    return reduce_loss(at::where(at::lt(absd, delta), quad, lin), reduction);
 }
 
 at::Tensor& smooth_l1_loss_out_vulkan(const at::Tensor& self, const at::Tensor& target, int64_t reduction, double beta, at::Tensor& out)
@@ -166,8 +156,7 @@ at::Tensor& smooth_l1_loss_out_vulkan(const at::Tensor& self, const at::Tensor& 
     } else {
         at::Tensor quad = at::div(at::mul(at::mul(d, d), 0.5), beta);
         at::Tensor lin = at::sub(absd, 0.5 * beta);
-        at::Tensor mask = gt_mask(at::sub(absd, beta));
-        loss = at::add(at::mul(at::rsub(mask, 1), quad), at::mul(mask, lin));
+        loss = at::where(at::lt(absd, beta), quad, lin);
     }
     return fill_out(out, reduce_loss(loss, reduction));
 }
@@ -380,8 +369,7 @@ at::Tensor softplus_vulkan(const at::Tensor& self, const at::Scalar& beta, const
 {
     at::Tensor bx = at::mul(self, beta);
     at::Tensor sp = at::div(at::add(at::clamp_min(bx, 0), at::log1p(at::exp(at::neg(at::abs(bx))))), beta);
-    at::Tensor mask = at::clamp(at::sign(at::sub(bx, threshold)), 0, 1);
-    return at::add(at::mul(mask, self), at::mul(at::rsub(mask, 1), sp));
+    return at::where(at::gt(bx, threshold), self, sp);
 }
 
 at::Tensor mish_vulkan(const at::Tensor& self)
