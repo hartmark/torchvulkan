@@ -533,16 +533,6 @@ at::Tensor bmm_vulkan(
     );
 }
 
-at::Tensor matmul_vulkan(
-    const at::Tensor& self, 
-    const at::Tensor& other)
-{
-    return dispatch_matmul_shader(
-        self, other, {}, 1, 0, MatmulActivation::NONE,
-        [&]() { return at::matmul(self.to(at::kCPU), other.to(at::kCPU)).to(self.device()); }
-    );
-}
-
 at::Tensor addmm_vulkan(
     const at::Tensor& input, 
     const at::Tensor& mat1, 
@@ -589,7 +579,6 @@ at::Tensor addmm_activation_vulkan(
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("mm", &mm_vulkan);
     m.impl("bmm", &bmm_vulkan);
-    m.impl("matmul", &matmul_vulkan);
     m.impl("addmm", &addmm_vulkan);
     m.impl("baddbmm", &baddbmm_vulkan);
     m.impl("_addmm_activation", &addmm_activation_vulkan);

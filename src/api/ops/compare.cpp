@@ -274,7 +274,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("isposinf.out", &isposinf_out_vulkan);
     m.impl("isneginf.out", &isneginf_out_vulkan);
     m.impl("where.self", &where_vulkan);
-    m.impl("where.ScalarOther", &where_scalar_other_vulkan);
-    m.impl("where.ScalarSelf", &where_scalar_self_vulkan);
-    m.impl("where.Scalar", &where_scalar_vulkan);
 }

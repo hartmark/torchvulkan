@@ -65,7 +65,7 @@ at::Tensor& addmv_out_vulkan(const at::Tensor& self, const at::Tensor& mat, cons
 
     at::Tensor m = low ? mat.to(at::kFloat) : mat;
     at::Tensor v = low ? vec.to(at::kFloat) : vec;
-    at::Tensor res = at::mul(at::matmul(m, v), a);
+    at::Tensor res = at::mul(at::mm(m, v.unsqueeze(1)).squeeze(1), a);
     if (b.toDouble() != 0.0) res = at::add(res, at::mul(low ? self.to(at::kFloat) : self, b));
     return fill_out(out, res.to(odt));
 }
@@ -375,20 +375,6 @@ at::Tensor softplus_vulkan(const at::Tensor& self, const at::Scalar& beta, const
 at::Tensor mish_vulkan(const at::Tensor& self)
 {
     return at::mul(self, at::tanh(softplus_vulkan(self, 1, 20)));
-}
-
-at::Tensor tanhshrink_vulkan(const at::Tensor& self)
-{
-    return at::sub(self, at::tanh(self));
-}
-
-at::Tensor square_vulkan(const at::Tensor& self)
-{
-    if (self.scalar_type() == at::kBool) {
-        at::Tensor t = self.to(at::kLong);
-        return at::mul(t, t);
-    }
-    return at::mul(self, self);
 }
 
 at::Tensor logit_vulkan(const at::Tensor& self, c10::optional<double> eps)
@@ -816,8 +802,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("elu", &elu_vulkan);
     m.impl("softplus", &softplus_vulkan);
     m.impl("mish", &mish_vulkan);
-    m.impl("tanhshrink", &tanhshrink_vulkan);
-    m.impl("square", &square_vulkan);
     m.impl("logsumexp", &logsumexp_vulkan);
     m.impl("var.correction", &var_correction_vulkan);
     m.impl("std.correction", &std_correction_vulkan);

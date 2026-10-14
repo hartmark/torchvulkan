@@ -132,15 +132,6 @@ at::Tensor unfold_vulkan(const at::Tensor& self, int64_t dimension, int64_t size
     return at::native::unfold(self, dimension, size, step);
 }
 
-at::Tensor contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format)
-{
-    if (self.is_contiguous(memory_format)) return self;
-    at::Tensor result = at::empty_like(self, self.options().memory_format(memory_format));
-
-    // call directly rather than through dispatcher to avoid weird fallbacks that trigger infinite recursive loops
-    return torchvulkan::copy_vulkan(self, result, false); 
-}
-
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -151,5 +142,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("transpose.int", &transpose_int_vulkan);
     m.impl("permute", &permute_vulkan);
     m.impl("unfold", &unfold_vulkan);
-    m.impl("contiguous", &contiguous_vulkan);
 }
