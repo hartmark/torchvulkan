@@ -650,6 +650,46 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     return std::make_tuple(y, mean, rstd);
 }
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor> native_group_norm_vulkan(
+    const at::Tensor& input,
+    const c10::optional<at::Tensor>& weight,
+    const c10::optional<at::Tensor>& bias,
+    c10::SymInt N,
+    c10::SymInt C,
+    c10::SymInt HxW,
+    int64_t group,
+    double eps)
+{
+    int64_t n = N.guard_int(__FILE__, __LINE__);
+    int64_t c = C.guard_int(__FILE__, __LINE__);
+    int64_t hw = HxW.guard_int(__FILE__, __LINE__);
+    TORCH_CHECK(group > 0 && c % group == 0, "Expected number of channels in input to be divisible by num_groups, but got input of shape ",
+        input.sizes(), " and num_groups=", group);
+
+    at::ScalarType odt = input.scalar_type();
+    bool low = is_low_prec(odt);
+    at::Tensor x = (low ? input.to(at::kFloat) : input).reshape({n, group, (c / group) * hw});
+
+    auto [var, mean] = compute_var_mean(x, {2}, /*correction=*/0.0, /*keepdim=*/true);
+    at::Tensor rstd = at::rsqrt(at::add(var, eps));
+    at::Tensor y = at::mul(at::sub(x, mean), rstd).reshape(input.sizes());
+
+    // weight and bias are per channel
+    std::vector<int64_t> channel_shape(input.dim(), 1);
+    channel_shape[1] = c;
+    if (weight.has_value() && weight->defined()) y = at::mul(y, (low ? weight->to(at::kFloat) : *weight).reshape(channel_shape));
+    if (bias.has_value() && bias->defined()) y = at::add(y, (low ? bias->to(at::kFloat) : *bias).reshape(channel_shape));
+
+    mean = mean.reshape({n, group});
+    rstd = rstd.reshape({n, group});
+    if (low) {
+        y = y.to(odt);
+        mean = mean.to(odt);
+        rstd = rstd.to(odt);
+    }
+    return std::make_tuple(y, mean, rstd);
+}
+
 std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_backward_vulkan(
     const at::Tensor& grad_out,
     const at::Tensor& input,
@@ -914,6 +954,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_fused_sdp_choice", &fused_sdp_choice_vulkan);
     m.impl("native_layer_norm", &native_layer_norm_vulkan);
     m.impl("native_layer_norm_backward", &native_layer_norm_backward_vulkan);
+    m.impl("native_group_norm", &native_group_norm_vulkan);
     m.impl("sigmoid_backward.grad_input", &sigmoid_backward_out_vulkan);
     m.impl("tanh_backward.grad_input", &tanh_backward_out_vulkan);
     m.impl("leaky_relu_backward.grad_input", &leaky_relu_backward_out_vulkan);
