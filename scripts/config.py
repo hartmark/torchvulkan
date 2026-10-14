@@ -122,6 +122,15 @@ KERNELS = [
     Kernel('copy', 'ops/copy.slang', [
         Entry('copy_main', BYTE_WIDTHS),
     ]),
+    Kernel('index_gather', 'ops/index_gather.slang', [
+        Entry('index_gather_main', BYTE_WIDTHS),
+    ]),
+    Kernel('embedding_backward', 'ops/embedding_backward.slang', [
+        Entry('embedding_backward_main', FLOATS),
+    ]),
+    Kernel('sort', 'ops/sort.slang', [
+        Entry('sort_main', DTYPES),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),

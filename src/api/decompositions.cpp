@@ -618,52 +618,6 @@ int64_t fused_sdp_choice_vulkan(
     return static_cast<int64_t>(at::SDPBackend::math);
 }
 
-at::Tensor embedding_vulkan(
-    const at::Tensor& weight,
-    const at::Tensor& indices,
-    c10::SymInt /* padding_idx */,
-    bool scale_grad_by_freq,
-    bool sparse)
-{
-    TORCH_CHECK(!sparse, "torchvulkan [NOT IMPLEMENTED]: sparse embedding gradients are not supported.");
-    TORCH_CHECK(!scale_grad_by_freq, "torchvulkan [NOT IMPLEMENTED]: scale_grad_by_freq is not supported.");
-
-    int64_t num_embeddings = weight.size(0);
-    at::Tensor flat_idx = indices.reshape({-1});
-    at::Tensor vocab = at::arange(num_embeddings, flat_idx.options());
-    at::Tensor one_hot = at::eq(flat_idx.unsqueeze(1), vocab).to(weight.scalar_type());
-    at::Tensor out = at::matmul(one_hot, weight);
-
-    std::vector<int64_t> out_shape(indices.sizes().begin(), indices.sizes().end());
-    out_shape.push_back(weight.size(1));
-    return out.reshape(out_shape);
-}
-
-at::Tensor embedding_dense_backward_vulkan(
-    const at::Tensor& grad_output,
-    const at::Tensor& indices,
-    c10::SymInt num_weights,
-    c10::SymInt padding_idx,
-    bool scale_grad_by_freq)
-{
-    TORCH_CHECK(!scale_grad_by_freq, "torchvulkan [NOT IMPLEMENTED]: scale_grad_by_freq is not supported.");
-
-    int64_t num_weights_ = num_weights.guard_int(__FILE__, __LINE__);
-    int64_t padding_idx_ = padding_idx.guard_int(__FILE__, __LINE__);
-
-    at::Tensor flat_idx = indices.reshape({-1});
-    at::Tensor flat_grad = grad_output.reshape({flat_idx.size(0), grad_output.size(-1)});
-    at::Tensor vocab = at::arange(num_weights_, flat_idx.options());
-    at::Tensor one_hot = at::eq(flat_idx.unsqueeze(1), vocab);
-
-    if (padding_idx_ >= 0) {
-        at::Tensor keep = at::ne(flat_idx, padding_idx_).unsqueeze(1);
-        one_hot = at::logical_and(one_hot, keep);
-    }
-
-    return at::matmul(one_hot.to(grad_output.scalar_type()).transpose(0, 1), flat_grad);
-}
-
 std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     const at::Tensor& input,
     c10::SymIntArrayRef normalized_shape,
