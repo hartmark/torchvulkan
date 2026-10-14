@@ -56,7 +56,7 @@ BYTE_WIDTHS = [
 def vec_size(nbytes):
     """
     How many elements a thread handles per step: as many as fit in 128 bits,
-    capped at 4. Mirrored by get_dtype_vec_size in src/api/ops/helpers.h.
+    capped at 4. The host reads it from VEC_SIZE_FOR_BYTES in shader_kernels.h.
     """
     return int(min(16 / nbytes, 4))
 

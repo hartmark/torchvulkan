@@ -2,7 +2,7 @@
 #include <volk.h>
 #include <ATen/ATen.h>
 
-#include "shaders/shader_kernels.h"
+#include "generated/shader_kernels.h"
 #include "builders.h"
 #include "dispatch.h"
 

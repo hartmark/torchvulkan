@@ -2,12 +2,12 @@
 Turns scripts/config.py into build instructions. Runs at CMake configure time
 and writes:
 
-  build/shaders/variants.cmake   one torchvulkan_add_shader(...) per variant,
+  <out>/variants.cmake           one torchvulkan_add_shader(...) per variant,
                                  which src/shaders/CMakeLists.txt turns into a
                                  slangc -entry ... -specialize ... command
-  build/shaders/variants.json    which ShaderKey each compiled variant serves,
+  <out>/variants.json            which ShaderKey each compiled variant serves,
                                  read by pack_shaders.py
-  src/shaders/shader_kernels.h   enum class Kernel, the host's name for a kernel
+  <kernels-header>               enum class Kernel, the host's name for a kernel
 """
 
 import argparse
@@ -83,7 +83,11 @@ def main(args):
     enum.append('inline constexpr const char* KERNEL_NAMES[] = {')
     enum.extend(f'    "{name}",' for name in kernel_names)
     enum.append('};\n')
+    vec_sizes = ', '.join(str(config.vec_size(n)) if n else '1' for n in range(17))
+    enum.append('// elements a vectorised kernel handles per thread, indexed by the element size in bytes')
+    enum.append(f'inline constexpr int VEC_SIZE_FOR_BYTES[17] = {{ {vec_sizes} }};\n')
     enum.append('} // namespace torchvulkan\n')
+    args.kernels_header.parent.mkdir(parents=True, exist_ok=True)
     write_if_changed(args.kernels_header, '\n'.join(enum))
 
     print(f'Configured {len(variants)} shader variants across {len(kernel_names)} kernels.')
@@ -93,5 +97,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Write the shader variant list for CMake and the packer.')
     parser.add_argument('--src', type=Path, default=Path('src/shaders'), help='Directory containing shader sources')
     parser.add_argument('--out', type=Path, default=Path('build/shaders'), help='Directory for generated build files')
-    parser.add_argument('--kernels-header', type=Path, default=Path('src/shaders/shader_kernels.h'), help='Generated Kernel enum header')
+    parser.add_argument('--kernels-header', type=Path, default=Path('build/generated/shader_kernels.h'), help='Generated Kernel enum header')
     main(parser.parse_args())
