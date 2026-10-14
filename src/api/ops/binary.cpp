@@ -1,7 +1,9 @@
 #include <torch/extension.h>
 #include <ATen/TensorIterator.h>
 #include <c10/core/MemoryFormat.h>
+#include <cmath>
 #include <functional>
+#include <optional>
 #include "vulkan/memory.h"
 #include "vulkan/vulkan_context.h"
 #include "vulkan/allocator.h"
@@ -32,6 +34,81 @@ enum class BinaryOp {
     LOGADDEXP2 = 18
 };
 
+// a 0-dim CPU tensor (or a wrapped Python number) mixed with vulkan tensors acts as a scalar
+bool is_cpu_scalar(const at::Tensor& t)
+{
+    return t.unsafeGetTensorImpl()->is_wrapped_number() || (t.dim() == 0 && t.device().is_cpu());
+}
+
+std::optional<at::Tensor> dispatch_binary_shader(
+    const at::Tensor& self,
+    const at::Tensor& other,
+    const at::Scalar& scalar,
+    const at::Scalar& alpha,
+    BinaryOp operation,
+    c10::ScalarType promoted_type)
+{
+    DeviceContext* device = get_device_context(self);
+    if (!is_dtype_supported(device, promoted_type)) return std::nullopt;
+
+    bool use_scalar = !other.defined();
+    at::Tensor a = self.to(promoted_type);
+    at::Tensor b = use_scalar ? at::Tensor() : other.to(a.options());
+
+    at::Tensor undefined_out;
+    at::TensorIteratorConfig config;
+    config.set_check_mem_overlap(true).add_output(undefined_out).add_input(a);
+    if (!use_scalar) config.add_input(b);
+    at::TensorIterator iter = config.build();
+
+    at::Tensor out = iter.output();
+    uint64_t numel = iter.numel();
+    if (numel == 0) return out;
+
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (out_dims > MAX_DIMS || !fits_32bit_indexing(iter)) return std::nullopt;
+
+    uint32_t vecSize = get_dtype_vec_size(promoted_type);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type, vecSize, device);
+    uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
+    uint32_t has_alpha = (alpha.toDouble() != 1.0) ? 1u : 0u;
+
+    SpecializationBuilder spd{};
+    spd.push(static_cast<uint32_t>(operation))
+       .push(contiguous)
+       .push(use_scalar ? 1u : 0u)
+       .push(out_dims)
+       .push(workgroupSizeX)
+       .push(has_alpha);
+
+    MetadataBuilder metadataBuilder = get_iter_metadata(iter, {1, use_scalar ? -1 : 2, 0});
+    Metadata metadata = metadataBuilder.build();
+
+    PushConstantBuilder pcs{};
+    pcs.push(get_tensor_address(a))
+       .push(use_scalar ? uint64_t(0) : get_tensor_address(b))
+       .push(get_tensor_address(out))
+       .push_metadata(contiguous ? nullptr : &metadata)
+       .push(numel)
+       .push_scalar(alpha, promoted_type)
+       .push_scalar(use_scalar ? scalar : at::Scalar(0), promoted_type);
+
+    std::vector<at::Tensor> reads = {a};
+    if (!use_scalar) reads.push_back(b);
+
+    uint64_t threads = contiguous ? (numel + (vecSize - 1)) / vecSize : numel;
+    device->shader_manager->dispatchShader(
+        ShaderKey{torchvulkan::Kernel::BINARY, promoted_type},
+        spd.build(),
+        pcs.build(),
+        /* read = */ reads,
+        /* write = */ {out},
+        get_group_count(threads, workgroupSizeX), 1, 1
+    );
+
+    return out;
+}
+
 at::Tensor binary_op_vulkan(
     const at::Tensor& self, 
     const at::Scalar& other, 
@@ -39,109 +116,11 @@ at::Tensor binary_op_vulkan(
     BinaryOp operation, 
     const std::function<at::Tensor(const at::Tensor&, const at::Scalar&)>& fallback)
 {
-    c10::ScalarType promoted_type = at::result_type(self, other);
-    
-    if (!is_dtype_supported(promoted_type)) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", promoted_type, ". Falling back to CPU.");
-        at::Tensor out = fallback(self.cpu(), other);
-        return out.to(self.device());
-    }
+    std::optional<at::Tensor> out = dispatch_binary_shader(self, at::Tensor(), other, alpha, operation, at::result_type(self, other));
+    if (out.has_value()) return *out;
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t alignment = device->properties.limits.minStorageBufferOffsetAlignment;
-    
-    at::Tensor self_dtype = self.to(promoted_type);
-    size_t self_offset_bytes = self_dtype.storage_offset() * self_dtype.element_size();
-    if (self_offset_bytes % alignment != 0) {
-        self_dtype = self_dtype.clone();
-    }
-    
-    at::Tensor out;
-    at::TensorIterator iter = at::TensorIteratorConfig()
-        .set_check_mem_overlap(true)
-        .add_output(out)
-        .add_input(self_dtype)
-        .build();
-
-    out = iter.output();
-    uint64_t numel = iter.numel();
-    if (numel == 0) return out;
-
-    int32_t out_dims = static_cast<int32_t>(iter.ndim());
-    if (out_dims > MAX_DIMS) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
-        at::Tensor out = fallback(self.cpu(), other);
-        return out.to(self.device());
-    }
-    
-    uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type, vecSize);
-
-    uint32_t contiguous = iter.is_contiguous();
-    ShaderKey shader_key{torchvulkan::Kernel::BINARY, promoted_type};
-    uint32_t op = static_cast<uint32_t>(operation);
-    uint32_t use_scalar = 1;
-    uint32_t has_alpha = (alpha.toDouble() != 1.0) ? 1u : 0u;
-
-    SpecializationBuilder spd{};
-    spd.push(op)
-       .push(contiguous)
-       .push(use_scalar)
-       .push(out_dims)
-       .push(workgroupSizeX)
-       .push(has_alpha);
-    SpecializationArgs specialization = spd.build();
-
-    IntDivider sizes; 
-    uint32_t strides_a[MAX_DIMS] = {0};
-    uint32_t strides_b[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-    
-    uint64_t metadata_address = 0;
-    if (!contiguous) {
-        int64_t el_size = iter.element_size(0);
-        at::IntArrayRef iter_shape = iter.shape();
-        at::IntArrayRef iter_strides_out = iter.strides(0);
-        at::IntArrayRef iter_strides_a = iter.strides(1);
-
-        for (int i = 0; i < out_dims; i++) {
-            sizes.set(i, iter_shape[i]);
-            strides_a[i] = iter_strides_a[i] / el_size;
-            strides_out[i] = iter_strides_out[i] / el_size;
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides_a, out_dims)
-                       .push_array(strides_b, out_dims)
-                       .push_array(strides_out, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
-
-    PushConstantBuilder pcs{};
-    pcs.push(get_tensor_address(self_dtype))
-       .push(/* tensor_b = */ (uint64_t)0) // the second operand is a scalar, so the shader never reads it
-       .push(get_tensor_address(out))
-       .push(metadata_address)
-       .push(numel)
-       .push_scalar(alpha, promoted_type)
-       .push_scalar(other, promoted_type);
-
-    uint64_t numel_vec = !contiguous ? numel : (numel + (vecSize-1)) / vecSize;
-    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
-    
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
-    device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ {self_dtype},
-        /* write = */ {out},
-        groupX, 1, 1
-    );
-
-    return out;
+    TORCH_WARN_ONCE("torchvulkan [WARNING]: A binary op on ", self.scalar_type(), " can't run on the Vulkan device. Falling back to CPU.");
+    return fallback(self.cpu(), other).to(self.device());
 }
 
 at::Tensor binary_op_vulkan(
@@ -151,8 +130,7 @@ at::Tensor binary_op_vulkan(
     BinaryOp operation, 
     const std::function<at::Tensor(const at::Tensor&, const at::Tensor&)>& fallback)
 {    
-    // use the scalar function if other is a scalar wrapped in a tensor 
-    if (other.unsafeGetTensorImpl()->is_wrapped_number()) 
+    if (is_cpu_scalar(other) && self.device().type() == c10::DeviceType::PrivateUse1) 
     {
         return binary_op_vulkan(
             self, other.item(), alpha, operation,
@@ -160,119 +138,14 @@ at::Tensor binary_op_vulkan(
         );
     }
 
-    c10::ScalarType promoted_type = at::result_type(self, other);
-    
-    if (!is_dtype_supported(promoted_type)) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", promoted_type, ". Falling back to CPU.");
-        at::Tensor out = fallback(self.cpu(), other.cpu());
-        return out.to(self.device());
-    }
+    at::Tensor lhs = is_cpu_scalar(self) ? self.to(other.device()) : self;
+    at::Tensor rhs = other.device() == lhs.device() ? other : other.to(lhs.device());
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t alignment = device->properties.limits.minStorageBufferOffsetAlignment;
-    
-    at::Tensor self_dtype = self.to(promoted_type);
-    size_t self_offset_bytes = self_dtype.storage_offset() * self_dtype.element_size();
-    if (self_offset_bytes % alignment != 0) {
-        self_dtype = self_dtype.clone();
-    }
+    std::optional<at::Tensor> out = dispatch_binary_shader(lhs, rhs, at::Scalar(0), alpha, operation, at::result_type(self, other));
+    if (out.has_value()) return *out;
 
-    at::Tensor other_dtype = other.to(self_dtype.options());
-    size_t other_offset_bytes = other_dtype.storage_offset() * other_dtype.element_size();
-    if (other_offset_bytes % alignment != 0) {
-        other_dtype = other_dtype.clone();
-    }
-    
-    at::Tensor out;
-    at::TensorIterator iter = at::TensorIteratorConfig()
-        .set_check_mem_overlap(true)
-        .add_output(out)
-        .add_input(self_dtype)
-        .add_input(other_dtype)
-        .build();
-
-    out = iter.output();
-    uint64_t numel = iter.numel();
-    if (numel == 0) return out;
-
-    int32_t out_dims = static_cast<int32_t>(iter.ndim());
-    if (out_dims > MAX_DIMS) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
-        at::Tensor out = fallback(self.cpu(), other.cpu());
-        return out.to(self.device());
-    }
-
-    uint32_t vecSize = get_dtype_vec_size(promoted_type);
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted_type, vecSize);
-
-    uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
-    ShaderKey shader_key{torchvulkan::Kernel::BINARY, promoted_type};
-    uint32_t op = static_cast<uint32_t>(operation);
-    uint32_t use_scalar = 0;
-    uint32_t has_alpha = (alpha.toDouble() != 1.0) ? 1u : 0u;
-
-    SpecializationBuilder spd{};
-    spd.push(op)
-       .push(contiguous)
-       .push(use_scalar)
-       .push(out_dims)
-       .push(workgroupSizeX)
-       .push(has_alpha);
-    SpecializationArgs specialization = spd.build();
-
-    IntDivider sizes;
-    uint32_t strides_a[MAX_DIMS] = {0};
-    uint32_t strides_b[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-
-    uint64_t metadata_address = 0;
-    if (!contiguous)
-    {
-        int64_t el_size = iter.element_size(0);
-        at::IntArrayRef iter_shape = iter.shape();
-        at::IntArrayRef iter_strides_out = iter.strides(0);
-        at::IntArrayRef iter_strides_a = iter.strides(1);
-        at::IntArrayRef iter_strides_b = iter.strides(2);
-
-        for (int i = 0; i < out_dims; i++) {
-            sizes.set(i, iter_shape[i]);
-            strides_a[i] = iter_strides_a[i] / el_size;
-            strides_b[i] = iter_strides_b[i] / el_size;
-            strides_out[i] = iter_strides_out[i] / el_size;
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides_a, out_dims)
-                       .push_array(strides_b, out_dims)
-                       .push_array(strides_out, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
-
-    PushConstantBuilder pcs{};
-    pcs.push(get_tensor_address(self_dtype))
-       .push(get_tensor_address(other_dtype))
-       .push(get_tensor_address(out))
-       .push(metadata_address)
-       .push(numel)
-       .push_scalar(alpha, promoted_type)
-       .push_scalar((at::Scalar)0, promoted_type);
-           
-    uint64_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
-    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
-
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
-    device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ {self_dtype, other_dtype},
-        /* write = */ {out},
-        groupX, 1, 1
-    );
-
-    return out;
+    TORCH_WARN_ONCE("torchvulkan [WARNING]: A binary op on ", at::result_type(self, other), " can't run on the Vulkan device. Falling back to CPU.");
+    return fallback(lhs.cpu(), rhs.cpu()).to(lhs.device());
 }
 
 } // namespace

@@ -20,13 +20,13 @@ std::tuple<at::Tensor, at::Tensor> native_dropout_vulkan(const at::Tensor& input
     double keep_prob = 1.0 - p;
     double scale = keep_prob == 0 ? 0.0 : 1.0 / keep_prob;
 
-    if (!at::isFloatingType(input.scalar_type()) || !is_dtype_supported(input.scalar_type()) || !is_dtype_supported(at::kBool)) {
+    if (!at::isFloatingType(input.scalar_type()) || !is_dtype_supported(input, input.scalar_type()) || !is_dtype_supported(input, at::kBool) || !fits_32bit_indexing({input})) {
         at::Tensor mask = at::empty_like(input, input.options().dtype(at::kBool));
         mask.bernoulli_(keep_prob);
         return std::make_tuple(input.mul(mask).mul_(scale), mask);
     }
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = get_device_context(input);
     at::ScalarType real = random_real_dtype(input.scalar_type());
 
     at::Tensor src = input.contiguous();
@@ -34,7 +34,7 @@ std::tuple<at::Tensor, at::Tensor> native_dropout_vulkan(const at::Tensor& input
     at::Tensor mask = at::empty_like(src, src.options().dtype(at::kBool), at::MemoryFormat::Contiguous);
     uint64_t numel = src.numel();
     uint32_t vecSize = get_dtype_vec_size(src.scalar_type());
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(src.scalar_type(), vecSize);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(src.scalar_type(), vecSize, device);
 
     SpecializationBuilder spd{};
     spd.push(workgroupSizeX);
@@ -51,7 +51,7 @@ std::tuple<at::Tensor, at::Tensor> native_dropout_vulkan(const at::Tensor& input
         .push(offset)
         .push(random_real_bits(keep_prob, real))
         .push(random_real_bits(scale, real));
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    PushConstants pushConstants = pcs.build();
 
     uint64_t threads = (numel + vecSize - 1) / vecSize;
     uint32_t groupX = static_cast<uint32_t>((threads + workgroupSizeX - 1) / workgroupSizeX);

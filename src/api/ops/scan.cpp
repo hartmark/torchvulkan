@@ -24,7 +24,7 @@ at::Tensor cumscan(
     if (x.dim() == 0 || x.numel() == 0) return x.clone().to(out_dtype);
 
     int64_t d = c10::maybe_wrap_dim(dim, x.dim());
-    if (!is_dtype_supported(compute) || x.dim() > MAX_DIMS) {
+    if (!is_dtype_supported(x, compute) || x.dim() > MAX_DIMS || !fits_32bit_indexing({x})) {
         at::Tensor cpu = op == ScanOp::SUM ? at::cumsum(x.cpu(), d) : at::cumprod(x.cpu(), d);
         return cpu.to(out_dtype).to(self.device());
     }
@@ -35,7 +35,7 @@ at::Tensor cumscan(
     at::Tensor out = at::empty(x.sizes(), x.options());
     if (num_lines == 0) return out.to(out_dtype);
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = get_device_context(x);
     uint32_t workgroupSizeX = std::min<uint32_t>(256u, device->properties.limits.maxComputeWorkGroupInvocations);
     ShaderKey shader_key{torchvulkan::Kernel::SCAN, compute};
     uint32_t opv = static_cast<uint32_t>(op);
@@ -47,44 +47,28 @@ at::Tensor cumscan(
        .push(workgroupSizeX);
     SpecializationArgs specialization = spd.build();
 
-    std::vector<int64_t> self_strides(x.strides().begin(), x.strides().end());
-    std::vector<int64_t> out_strides(out.strides().begin(), out.strides().end());
     std::vector<int64_t> sizes_kept(x.sizes().begin(), x.sizes().end());
     sizes_kept[d] = 1;
 
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-    for (int64_t i = 0; i < ndim; i++) {
-        int64_t actual_dim = ndim - 1 - i;
-        sizes.set(i, static_cast<uint32_t>(sizes_kept[actual_dim]));
-        strides_in[i] = static_cast<uint32_t>(self_strides[actual_dim]);
-        strides_out[i] = static_cast<uint32_t>(out_strides[actual_dim]);
-    }
-
-    MetadataBuilder metadataBuilder{};
-    metadataBuilder.push(sizes, ndim32)
-                   .push_array(strides_in, ndim32)
-                   .push_array(strides_out, ndim32);
+    MetadataBuilder metadataBuilder = get_shape_metadata(sizes_kept, {x.strides(), out.strides()});
     Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(x))
        .push(get_tensor_address(out))
-       .push(device->shader_manager->registerMetadata(metadata))
+       .push_metadata(&metadata)
        .push(static_cast<uint64_t>(num_lines))
        .push(static_cast<uint32_t>(scan_size))
-       .push(static_cast<uint32_t>(self_strides[d]))
-       .push(static_cast<uint32_t>(out_strides[d]));
+       .push(static_cast<uint32_t>(x.stride(d)))
+       .push(static_cast<uint32_t>(out.stride(d)));
 
     // one workgroup per line - the shader itself distributes each line across workgroupSizeX threads
     uint32_t groupX = static_cast<uint32_t>(num_lines);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
     device->shader_manager->dispatchShader(
         shader_key,
         specialization,
-        pushConstants,
+        pcs.build(),
         /* read = */ {x},
         /* write = */ {out},
         groupX, 1, 1
@@ -128,7 +112,7 @@ void cumscanarg(
         return;
     }
     int64_t d = c10::maybe_wrap_dim(dim, self.dim());
-    if (!is_dtype_supported(self.scalar_type()) || self.dim() > MAX_DIMS) {
+    if (!is_dtype_supported(self, self.scalar_type()) || self.dim() > MAX_DIMS || !fits_32bit_indexing({self})) {
         auto r = op == CumArgOp::MAX ? at::cummax(self.cpu(), dim) : at::cummin(self.cpu(), dim);
         values.copy_(std::get<0>(r));
         indices.copy_(std::get<1>(r));
@@ -142,7 +126,7 @@ void cumscanarg(
     at::Tensor idx_t = at::empty(self.sizes(), self.options().dtype(at::kLong));
     if (num_lines == 0) return;
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = get_device_context(self);
     uint32_t workgroupSizeX = std::min<uint32_t>(256u, device->properties.limits.maxComputeWorkGroupInvocations);
     ShaderKey shader_key{torchvulkan::Kernel::SCAN_ARG, self.scalar_type()};
     uint32_t opv = static_cast<uint32_t>(op);
@@ -154,45 +138,29 @@ void cumscanarg(
        .push(workgroupSizeX);
     SpecializationArgs specialization = spd.build();
 
-    std::vector<int64_t> self_strides(self.strides().begin(), self.strides().end());
-    std::vector<int64_t> out_strides(val_t.strides().begin(), val_t.strides().end());
     std::vector<int64_t> sizes_kept(self.sizes().begin(), self.sizes().end());
     sizes_kept[d] = 1;
 
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-    for (int64_t i = 0; i < ndim; i++) {
-        int64_t actual_dim = ndim - 1 - i;
-        sizes.set(i, static_cast<uint32_t>(sizes_kept[actual_dim]));
-        strides_in[i] = static_cast<uint32_t>(self_strides[actual_dim]);
-        strides_out[i] = static_cast<uint32_t>(out_strides[actual_dim]);
-    }
-
-    MetadataBuilder metadataBuilder{};
-    metadataBuilder.push(sizes, ndim32)
-                   .push_array(strides_in, ndim32)
-                   .push_array(strides_out, ndim32);
+    MetadataBuilder metadataBuilder = get_shape_metadata(sizes_kept, {self.strides(), val_t.strides()});
     Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(self))
        .push(get_tensor_address(val_t))
        .push(get_tensor_address(idx_t))
-       .push(device->shader_manager->registerMetadata(metadata))
+       .push_metadata(&metadata)
        .push(static_cast<uint64_t>(num_lines))
        .push(static_cast<uint32_t>(scan_size))
-       .push(static_cast<uint32_t>(self_strides[d]))
-       .push(static_cast<uint32_t>(out_strides[d]));
+       .push(static_cast<uint32_t>(self.stride(d)))
+       .push(static_cast<uint32_t>(val_t.stride(d)));
 
     // one workgroup per line - the shader itself distributes each line across workgroupSizeX threads
     uint32_t groupX = static_cast<uint32_t>(num_lines);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
     device->shader_manager->dispatchShader(
         shader_key,
         specialization,
-        pushConstants,
+        pcs.build(),
         /* read = */ {self},
         /* write = */ {val_t, idx_t},
         groupX, 1, 1

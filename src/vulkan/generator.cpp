@@ -1,5 +1,6 @@
 #include "generator.h"
 
+#include <ATen/core/Tensor.h>
 #include <ATen/EmptyTensor.h>
 #include <cstring>
 

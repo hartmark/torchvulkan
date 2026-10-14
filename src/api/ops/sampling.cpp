@@ -16,15 +16,15 @@ void dispatch_multinomial_shader(
     at::Tensor& result)
 {
     at::ScalarType real = random_real_dtype(self.scalar_type());
-    if (!is_dtype_supported(real)) real = at::kFloat;
+    if (!is_dtype_supported(self, real)) real = at::kFloat;
 
     int64_t n_categories = self.size(-1);
     at::Tensor cdf = self.reshape({-1, n_categories}).to(real).cumsum(-1).contiguous();
     at::Tensor out = result.is_contiguous() ? result : at::empty(result.sizes(), result.options());
     uint64_t numel = out.numel();
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(real, 1);
+    DeviceContext* device = get_device_context(self);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(real, 1, device);
 
     SpecializationBuilder spd{};
     spd.push(workgroupSizeX);
@@ -40,7 +40,7 @@ void dispatch_multinomial_shader(
         .push(static_cast<uint64_t>(n_categories))
         .push(seed)
         .push(offset);
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    PushConstants pushConstants = pcs.build();
 
     uint32_t groupX = static_cast<uint32_t>((numel + workgroupSizeX - 1) / workgroupSizeX);
 

@@ -88,8 +88,8 @@ void dispatch_random_shader(
 {
     if (self.numel() == 0) return;
 
-    bool supported = is_dtype_supported(self.scalar_type());
-    bool too_many_dims = self.dim() > MAX_DIMS;
+    bool supported = is_dtype_supported(self, self.scalar_type());
+    bool too_many_dims = self.dim() > MAX_DIMS || !fits_32bit_indexing({self});
     bool needs_contiguous = op == RandomOp::BERNOULLI_TENSOR && !self.is_contiguous();
     if (!supported || too_many_dims || needs_contiguous)
     {
@@ -107,7 +107,7 @@ void dispatch_random_shader(
         return;
     }
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = get_device_context(self);
     at::ScalarType real = random_real_dtype(self.scalar_type());
 
     at::TensorIterator iter = at::TensorIterator::borrowing_nullary_op(self);
@@ -115,7 +115,7 @@ void dispatch_random_shader(
     int32_t out_dims = static_cast<int32_t>(iter.ndim());
     uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
     uint32_t vecSize = get_dtype_vec_size(self.scalar_type());
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(self.scalar_type(), vecSize);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(self.scalar_type(), vecSize, device);
 
     SpecializationBuilder spd{};
     spd.push(static_cast<uint32_t>(op))
@@ -124,23 +124,8 @@ void dispatch_random_shader(
         .push(workgroupSizeX);
     SpecializationArgs specialization = spd.build();
 
-    uint64_t metadata_address = 0;
-    if (!contiguous)
-    {
-        IntDivider sizes;
-        uint32_t strides[MAX_DIMS] = {0};
-        int64_t el_size = iter.element_size(0);
-        for (int i = 0; i < out_dims; i++) {
-            sizes.set(i, iter.shape()[i]);
-            strides[i] = iter.strides(0)[i] / el_size;
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
+    MetadataBuilder metadataBuilder = get_iter_metadata(iter, {0});
+    Metadata metadata = metadataBuilder.build();
 
     uint64_t param0 = random_real_bits(params.a, real);
     uint64_t param1 = random_real_bits(params.b, real);
@@ -160,14 +145,14 @@ void dispatch_random_shader(
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(self))
-        .push(metadata_address)
+        .push_metadata(contiguous ? nullptr : &metadata)
         .push(numel)
         .push(seed)
         .push(offset)
         .push(param0)
         .push(param1)
         .push(probs_address);
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    PushConstants pushConstants = pcs.build();
 
     uint64_t threads = (numel + vecSize - 1) / vecSize;
     uint32_t groupX = static_cast<uint32_t>((threads + workgroupSizeX - 1) / workgroupSizeX);

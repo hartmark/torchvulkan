@@ -42,104 +42,66 @@ at::Tensor cpu_compare_scalar(const at::Tensor& a, const at::Scalar& b, CompareO
     return cpu_compare(a, at::scalar_tensor(b, a.options()), op);
 }
 
-at::Tensor& dispatch_compare(
+bool dispatch_compare_shader(
     const at::Tensor& self, 
     const at::Tensor* other, 
     const at::Scalar& scalar_value, 
     at::Tensor& out, 
     CompareOp op, 
-    c10::ScalarType promoted
-) {
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t alignment = device->properties.limits.minStorageBufferOffsetAlignment;
+    c10::ScalarType promoted)
+{
+    DeviceContext* device = get_device_context(self);
+    if (!is_dtype_supported(device, promoted)) return false;
     bool use_scalar = (other == nullptr);
 
-    std::vector<int64_t> out_shape = use_scalar
-        ? self.sizes().vec()
-        : at::infer_size(self.sizes(), other->sizes());
-    if (!out.sizes().equals(out_shape)) out.resize_(out_shape);
+    at::Tensor a = self.to(promoted);
+    at::Tensor b = use_scalar ? at::Tensor() : other->to(a.options());
 
-    at::Tensor self_p = self.to(promoted);
-    if ((self_p.storage_offset() * self_p.element_size()) % alignment != 0) self_p = self_p.clone();
-    at::Tensor a = self_p.expand(out.sizes());
+    at::TensorIteratorConfig config;
+    config.check_all_same_dtype(false).set_check_mem_overlap(true).add_output(out).add_input(a);
+    if (!use_scalar) config.add_input(b);
+    at::TensorIterator iter = config.build();
 
-    at::Tensor other_p, b;
-    if (!use_scalar) {
-        other_p = other->to(promoted);
-        if ((other_p.storage_offset() * other_p.element_size()) % alignment != 0) other_p = other_p.clone();
-        b = other_p.expand(out.sizes());
-    } else {
-        other_p = self_p;
-        b = a;
-    }
+    uint64_t numel = iter.numel();
+    if (numel == 0) return true;
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (out_dims > MAX_DIMS || !fits_32bit_indexing(iter)) return false;
 
-    uint64_t numel = out.numel();
-    if (numel == 0) return out;
-    int32_t out_dims = static_cast<int32_t>(out.dim());
-
-    uint32_t contiguous = (a.is_contiguous() && b.is_contiguous() && out.is_contiguous()) ? 1 : 0;
+    uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
     uint32_t vecSize = get_dtype_vec_size(promoted);
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted, vecSize);
-    ShaderKey shader_key{torchvulkan::Kernel::COMPARE, promoted};
-    uint32_t opv = static_cast<uint32_t>(op);
-    uint32_t usc = use_scalar ? 1u : 0u;
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted, vecSize, device);
 
     SpecializationBuilder spd{};
-    spd.push(opv)
+    spd.push(static_cast<uint32_t>(op))
        .push(contiguous)
-       .push(usc)
+       .push(use_scalar ? 1u : 0u)
        .push(out_dims)
        .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    IntDivider sizes;
-    uint32_t strides_a[MAX_DIMS] = {0};
-    uint32_t strides_b[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-
-    uint64_t metadata_address = 0;
-    if (!contiguous) {
-        for (int i = 0; i < out_dims; i++) {
-            int td = out_dims - 1 - i;
-            sizes.set(i, static_cast<uint32_t>(out.size(td)));
-            strides_a[i] = static_cast<uint32_t>(a.stride(td));
-            strides_b[i] = static_cast<uint32_t>(b.stride(td));
-            strides_out[i] = static_cast<uint32_t>(out.stride(td));
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides_a, out_dims)
-                       .push_array(strides_b, out_dims)
-                       .push_array(strides_out, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
+    MetadataBuilder metadataBuilder = get_iter_metadata(iter, {1, use_scalar ? -1 : 2, 0});
+    Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(a))
        .push(use_scalar ? (uint64_t)0 : get_tensor_address(b)) // the shader never reads the second operand for a scalar
        .push(get_tensor_address(out))
-       .push(metadata_address)
+       .push_metadata(contiguous ? nullptr : &metadata)
        .push(numel)
        .push_scalar(scalar_value, promoted);
 
-    std::vector<at::Tensor> readTensors = {self_p};
-    if (!use_scalar) readTensors.push_back(other_p);
+    std::vector<at::Tensor> reads = {a};
+    if (!use_scalar) reads.push_back(b);
 
-    uint64_t numel_vec = contiguous ? (numel + (vecSize - 1)) / vecSize : numel;
-    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    uint64_t threads = contiguous ? (numel + (vecSize - 1)) / vecSize : numel;
     device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ readTensors,
+        ShaderKey{torchvulkan::Kernel::COMPARE, promoted},
+        spd.build(),
+        pcs.build(),
+        /* read = */ reads,
         /* write = */ {out},
-        groupX, 1, 1
+        get_group_count(threads, workgroupSizeX), 1, 1
     );
-
-    return out;
+    return true;
 }
 
 at::Tensor where_vulkan(
@@ -148,125 +110,95 @@ at::Tensor where_vulkan(
     const at::Tensor& other
 ) {
     c10::ScalarType promoted = at::result_type(self, other);
-    std::vector<int64_t> shape = at::infer_size(self.sizes(), other.sizes());
-    shape = at::infer_size(shape, condition.sizes());
+    c10::Device device = condition.device().type() == c10::DeviceType::PrivateUse1 ? condition.device()
+        : self.device().type() == c10::DeviceType::PrivateUse1 ? self.device() : other.device();
 
-    at::Tensor out = at::empty(shape, self.options().dtype(promoted));
-    if (out.numel() == 0) return out;
+    // 0-dim CPU tensors (from scalars) join the vulkan tensors' device
+    at::Tensor c = condition.to(device, at::kBool);
+    at::Tensor a = self.to(device, promoted);
+    at::Tensor b = other.to(device, promoted);
 
-    if (!is_dtype_supported(promoted) || out.dim() > MAX_DIMS) {
-        return at::where(condition.cpu(), self.cpu(), other.cpu()).to(out.device());
+    at::Tensor out = at::empty(at::infer_size(at::infer_size(c.sizes(), a.sizes()), b.sizes()), a.options());
+    at::TensorIterator iter = at::TensorIteratorConfig()
+        .check_all_same_dtype(false)
+        .add_output(out)
+        .add_input(c)
+        .add_input(a)
+        .add_input(b)
+        .build();
+    uint64_t numel = iter.numel();
+    if (numel == 0) return out;
+
+    DeviceContext* context = get_device_context(out);
+    int32_t out_dims = static_cast<int32_t>(iter.ndim());
+    if (!is_dtype_supported(context, promoted) || out_dims > MAX_DIMS || !fits_32bit_indexing(iter)) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: This where can't run on the Vulkan device. Falling back to CPU.");
+        return at::where(c.cpu(), a.cpu(), b.cpu()).to(device);
     }
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t alignment = device->properties.limits.minStorageBufferOffsetAlignment;
-    auto aligned = [&](at::Tensor t) {
-        if ((t.storage_offset() * t.element_size()) % alignment != 0) return t.clone();
-        return t;
-    };
-    at::Tensor c = aligned(condition.to(at::kBool));
-    at::Tensor a = aligned(self.to(promoted));
-    at::Tensor b = aligned(other.to(promoted));
-    at::Tensor ce = c.expand(shape), ae = a.expand(shape), be = b.expand(shape);
-
-    uint64_t numel = out.numel();
-    int32_t out_dims = static_cast<int32_t>(out.dim());
-    uint32_t contiguous = (ce.is_contiguous() && ae.is_contiguous() && be.is_contiguous()) ? 1 : 0;
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted, 1);
-    ShaderKey shader_key{torchvulkan::Kernel::WHERE, promoted};
+    uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(promoted, 1, context);
 
     SpecializationBuilder spd{};
     spd.push(contiguous)
        .push(out_dims)
        .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    IntDivider sizes;
-    uint32_t strides_cond[MAX_DIMS] = {0};
-    uint32_t strides_a[MAX_DIMS] = {0};
-    uint32_t strides_b[MAX_DIMS] = {0};
-
-    uint64_t metadata_address = 0;
-    if (!contiguous) {
-        for (int i = 0; i < out_dims; i++) {
-            int td = out_dims - 1 - i;
-            sizes.set(i, static_cast<uint32_t>(out.size(td)));
-            strides_cond[i] = static_cast<uint32_t>(ce.stride(td));
-            strides_a[i] = static_cast<uint32_t>(ae.stride(td));
-            strides_b[i] = static_cast<uint32_t>(be.stride(td));
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides_cond, out_dims)
-                       .push_array(strides_a, out_dims)
-                       .push_array(strides_b, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
+    MetadataBuilder metadataBuilder = get_iter_metadata(iter, {1, 2, 3});
+    Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(c))
        .push(get_tensor_address(a))
        .push(get_tensor_address(b))
        .push(get_tensor_address(out))
-       .push(metadata_address)
+       .push_metadata(contiguous ? nullptr : &metadata)
        .push(numel);
 
-    uint32_t groupX = (numel + (workgroupSizeX - 1)) / workgroupSizeX;
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
-    device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
+    context->shader_manager->dispatchShader(
+        ShaderKey{torchvulkan::Kernel::WHERE, promoted},
+        spd.build(),
+        pcs.build(),
         /* read = */ {c, a, b},
         /* write = */ {out},
-        groupX, 1, 1
+        get_group_count(numel, workgroupSizeX), 1, 1
     );
 
     return out;
-}
-
-at::Tensor& compare_out_vulkan(const at::Tensor& self, const at::Tensor& other, at::Tensor& out, CompareOp op) 
-{
-    std::vector<int64_t> shape = at::infer_size(self.sizes(), other.sizes());
-    if (!out.sizes().equals(shape)) out.resize_(shape);
-    c10::ScalarType promoted = at::result_type(self, other);
-    if (!is_dtype_supported(promoted) || out.dim() > MAX_DIMS) {
-        out.copy_(cpu_compare(self.cpu(), other.cpu(), op));
-        return out;
-    }
-    return dispatch_compare(self, &other, at::Scalar(0), out, op, promoted);
 }
 
 at::Tensor& compare_scalar_out_vulkan(const at::Tensor& self, const at::Scalar& other, at::Tensor& out, CompareOp op) 
 {
     if (!out.sizes().equals(self.sizes())) out.resize_(self.sizes());
     c10::ScalarType promoted = at::result_type(self, other);
-    if (!is_dtype_supported(promoted) || out.dim() > MAX_DIMS) {
+    if (!dispatch_compare_shader(self, nullptr, other, out, op, promoted)) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: This comparison can't run on the Vulkan device. Falling back to CPU.");
         out.copy_(cpu_compare_scalar(self.cpu(), other, op));
-        return out;
     }
-    return dispatch_compare(self, nullptr, other, out, op, promoted);
+    return out;
 }
 
-at::Tensor where_scalar_other_vulkan(const at::Tensor& condition, const at::Tensor& self, const at::Scalar& other) 
+bool is_cpu_scalar(const at::Tensor& t)
 {
+    return t.unsafeGetTensorImpl()->is_wrapped_number() || (t.dim() == 0 && t.device().is_cpu());
+}
+
+at::Tensor& compare_out_vulkan(const at::Tensor& self, const at::Tensor& other, at::Tensor& out, CompareOp op) 
+{
+    if (is_cpu_scalar(other) && self.device().type() == c10::DeviceType::PrivateUse1) {
+        return compare_scalar_out_vulkan(self, other.item(), out, op);
+    }
+
+    std::vector<int64_t> shape = at::infer_size(self.sizes(), other.sizes());
+    if (!out.sizes().equals(shape)) out.resize_(shape);
     c10::ScalarType promoted = at::result_type(self, other);
-    return where_vulkan(condition, self, at::scalar_tensor(other, self.options().dtype(promoted)));
-}
-
-at::Tensor where_scalar_self_vulkan(const at::Tensor& condition, const at::Scalar& self, const at::Tensor& other) 
-{
-    c10::ScalarType promoted = at::result_type(other, self);
-    return where_vulkan(condition, at::scalar_tensor(self, other.options().dtype(promoted)), other);
-}
-
-at::Tensor where_scalar_vulkan(const at::Tensor& condition, const at::Scalar& self, const at::Scalar& other) 
-{
-    c10::ScalarType promoted = at::result_type(self, other);
-    at::TensorOptions opts = condition.options().dtype(promoted);
-    return where_vulkan(condition, at::scalar_tensor(self, opts), at::scalar_tensor(other, opts));
+    at::Tensor lhs = self.to(out.device());
+    at::Tensor rhs = other.to(out.device());
+    if (!dispatch_compare_shader(lhs, &rhs, at::Scalar(0), out, op, promoted)) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: This comparison can't run on the Vulkan device. Falling back to CPU.");
+        out.copy_(cpu_compare(self.cpu(), other.cpu(), op));
+    }
+    return out;
 }
 
 at::Tensor& isinf_out_vulkan(const at::Tensor& self, at::Tensor& out) 

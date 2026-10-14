@@ -58,92 +58,53 @@ at::Tensor unary_op_vulkan(
     UnaryOp operation,
     const std::function<at::Tensor(const at::Tensor&)>& fallback)
 {
-    if (!is_dtype_supported(src.scalar_type())) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", src.scalar_type(), ". Falling back to CPU.");
-        return fallback(src.cpu()).to(src.device());
-    }
+    DeviceContext* device = get_device_context(src);
+    at::ScalarType dtype = src.scalar_type();
+    bool supported = is_dtype_supported(device, dtype);
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-
-    uint32_t alignment = device->properties.limits.minStorageBufferOffsetAlignment;
-    at::Tensor src_in = src;
-    if ((src_in.storage_offset() * src_in.element_size()) % alignment != 0) {
-        src_in = src_in.clone();
-    }
-
-    at::Tensor dst = at::empty_like(src_in);
-
+    at::Tensor dst = at::empty_like(src);
     at::TensorIterator iter = at::TensorIteratorConfig()
         .set_check_mem_overlap(true)
         .add_output(dst)
-        .add_input(src_in)
+        .add_input(src)
         .build();
 
     uint64_t numel = iter.numel();
     if (numel == 0) return dst;
 
     int32_t out_dims = static_cast<int32_t>(iter.ndim());
-    if (out_dims > MAX_DIMS) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Coalesced dimensions (", out_dims, ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+    if (!supported || out_dims > MAX_DIMS || !fits_32bit_indexing(iter)) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: A unary op on ", dtype, " can't run on the Vulkan device. Falling back to CPU.");
         return fallback(src.cpu()).to(src.device());
     }
 
-    uint32_t vecSize = get_dtype_vec_size(dst.scalar_type());
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(dst.scalar_type(), vecSize);
-
+    uint32_t vecSize = get_dtype_vec_size(dtype);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(dtype, vecSize, device);
     uint32_t contiguous = iter.is_contiguous() ? 1 : 0;
-    ShaderKey shader_key{torchvulkan::Kernel::UNARY, dst.scalar_type()};
-    uint32_t op = static_cast<uint32_t>(operation);
 
     SpecializationBuilder spd{};
-    spd.push(op)
+    spd.push(static_cast<uint32_t>(operation))
         .push(contiguous)
         .push(out_dims)
         .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    uint32_t strides_out[MAX_DIMS] = {0};
-
-    uint64_t metadata_address = 0;
-    if (!contiguous) {
-        int64_t el_size = iter.element_size(0);
-        at::IntArrayRef iter_shape = iter.shape();
-        at::IntArrayRef iter_strides_out = iter.strides(0);
-        at::IntArrayRef iter_strides_in = iter.strides(1);
-
-        for (int i = 0; i < out_dims; i++) {
-            sizes.set(i, iter_shape[i]);
-            strides_in[i] = iter_strides_in[i] / el_size;
-            strides_out[i] = iter_strides_out[i] / el_size;
-        }
-
-        MetadataBuilder metadataBuilder{};
-        metadataBuilder.push(sizes, out_dims)
-                       .push_array(strides_in, out_dims)
-                       .push_array(strides_out, out_dims);
-        Metadata metadata = metadataBuilder.build();
-        metadata_address = device->shader_manager->registerMetadata(metadata);
-    }
+    MetadataBuilder metadataBuilder = get_iter_metadata(iter, {1, 0});
+    Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
-    pcs.push(get_tensor_address(src_in))
+    pcs.push(get_tensor_address(src))
         .push(get_tensor_address(dst))
-        .push(metadata_address)
+        .push_metadata(contiguous ? nullptr : &metadata)
         .push(numel);
 
-    uint64_t numel_vec = !contiguous ? numel : (numel + (vecSize - 1)) / vecSize;
-    uint32_t groupX = (numel_vec + (workgroupSizeX - 1)) / workgroupSizeX;
-
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    uint64_t threads = contiguous ? (numel + (vecSize - 1)) / vecSize : numel;
     device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
-        /* read = */ {src_in},
+        ShaderKey{torchvulkan::Kernel::UNARY, dtype},
+        spd.build(),
+        pcs.build(),
+        /* read = */ {src},
         /* write = */ {dst},
-        groupX, 1, 1
+        get_group_count(threads, workgroupSizeX), 1, 1
     );
 
     return dst;
