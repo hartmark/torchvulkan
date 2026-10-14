@@ -1,16 +1,19 @@
 #pragma once
+#include <c10/core/ScalarType.h>
+#include <c10/util/Exception.h>
 #include <vector>
 #include <mutex>
-#include <stdexcept>
-#include <map>
-#include <array>
+#include <unordered_map>
 
 #include "volk.h"
 #include "memory.h"
-#include "shader.h"
 
-#define VK_CHECK(x) \
-    if (x != VK_SUCCESS) TORCH_CHECK(false, "torchvulkan [ERROR]: Vulkan error in Cache");
+#define VK_CHECK(x)                                                                         \
+    do {                                                                                    \
+        VkResult vk_check_result_ = (x);                                                    \
+        TORCH_CHECK(vk_check_result_ == VK_SUCCESS,                                         \
+            "torchvulkan [ERROR]: ", #x, " failed with VkResult ", vk_check_result_, ".");  \
+    } while (0)
 
 inline constexpr VkComponentTypeKHR COMPONENT_TYPE_BFLOAT16 = static_cast<VkComponentTypeKHR>(1000141000);
 
@@ -34,38 +37,38 @@ struct CoopMatParams {
 
 class VulkanCache {
 public:
-    void clearCache();
-    ~VulkanCache() { clearCache(); }
+    void setOwner(DeviceContext* owner) { owner_ = owner; }
 
-    VkCommandBuffer allocateCommandBuffer(VkCommandPool commandPool);
+    VkCommandBuffer allocateCommandBuffer();
     void deleteCommandBuffer(VkCommandBuffer commandBuffer);
 
     VkFence allocateFence();
     void deleteFence(VkFence fence);
 
+    static size_t roundBufferSize(size_t size);
     VulkanBuffer* allocateBuffer(size_t size, MemoryUsage usage);
-    void deleteBuffer(VulkanBuffer* buffer, MemoryUsage usage);
+    void deleteBuffer(VulkanBuffer* buffer);
+    void releaseBuffers();
+
+    void clear();
 
     void addCoopMatConfig(VkComponentTypeKHR aType, VkComponentTypeKHR bType, VkComponentTypeKHR cType, VkComponentTypeKHR resultType, CoopMatConfig config);
     std::vector<CoopMatConfig> getCoopMatConfig(c10::ScalarType aType, c10::ScalarType bType, c10::ScalarType cType, c10::ScalarType resultType) const;
-    CoopMatParams* getCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N);
-
-    void setDevice(VkDevice device) { device_ = device; }
-    void setDeviceTable(VolkDeviceTable& table) { device_table = table; }
+    const CoopMatParams& getCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N);
 
 private:
-    VkDevice device_;
-    VolkDeviceTable device_table;
+    DeviceContext* owner_ = nullptr;
     std::mutex mutex_;
     std::vector<VkCommandBuffer> commandBufferPool;
     std::vector<VkFence> fencePool;
 
-    static constexpr size_t NUM_BINS = 64;
-    std::vector<VulkanBuffer*> deviceBufferPool[NUM_BINS];
-    std::vector<VulkanBuffer*> stagingBufferPool[NUM_BINS];
-    size_t getBinIndex(size_t size);
-    size_t nextPowerOf2(size_t n);
+    // keyed by the rounded buffer size
+    std::unordered_map<size_t, std::vector<VulkanBuffer*>> deviceBufferPool;
+    std::unordered_map<size_t, std::vector<VulkanBuffer*>> stagingBufferPool;
 
     std::unordered_map<uint64_t, std::vector<CoopMatConfig>> coopMatCache;
     std::unordered_map<uint64_t, CoopMatParams> coopMatParamCache;
+
+    std::unordered_map<size_t, std::vector<VulkanBuffer*>>& poolFor(MemoryUsage usage);
+    CoopMatParams searchCoopMatParams(c10::ScalarType dtype, const std::vector<uint32_t>& available_sizes, uint32_t M, uint32_t N) const;
 };

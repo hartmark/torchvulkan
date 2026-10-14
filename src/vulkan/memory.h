@@ -3,6 +3,8 @@
 
 #include "vk_mem_alloc.h"
 
+struct DeviceContext;
+
 enum class MemoryUsage {
     HOST_TO_DEVICE,
     DEVICE_TO_HOST,
@@ -11,7 +13,7 @@ enum class MemoryUsage {
 
 class VulkanBuffer {
 public:
-    VulkanBuffer(VmaAllocator allocator, VkDevice device) : allocator_(allocator), device(device) {};
+    explicit VulkanBuffer(DeviceContext* owner) : owner_(owner) {}
     ~VulkanBuffer();
 
     // delete copy constructors
@@ -19,24 +21,24 @@ public:
     VulkanBuffer& operator=(const VulkanBuffer&) = delete;
 
     VkResult createBuffer(size_t size, MemoryUsage usage);
-    
+
     void* data() { return mappedData_; }
     size_t size() const { return size_; }
     MemoryUsage usage() const { return usage_; }
     VkBuffer buffer() const { return buffer_; }
     uint64_t bufferAddress() const { return bufferAddress_; }
+    DeviceContext* owner() const { return owner_; }
 
     void invalidate();
     void flush();
 
 private:
-    VmaAllocator allocator_;
-    VkDevice device = VK_NULL_HANDLE;
+    DeviceContext* owner_ = nullptr;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VmaAllocationInfo allocInfo_{};
     VkBuffer buffer_ = VK_NULL_HANDLE;
-    size_t size_;
-    MemoryUsage usage_;
+    size_t size_ = 0;
+    MemoryUsage usage_ = MemoryUsage::DEVICE_ONLY;
     void* mappedData_ = nullptr;
     uint64_t bufferAddress_ = 0;
 };

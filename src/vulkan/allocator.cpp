@@ -1,24 +1,25 @@
 #include "allocator.h"
+#include "shader.h"
+
+#include <cstring>
 
 VulkanAllocator globalVulkanAllocator;
 REGISTER_ALLOCATOR(c10::DeviceType::PrivateUse1, &globalVulkanAllocator);
 
 c10::DataPtr VulkanAllocator::allocate(size_t nbytes)
 {
-    if (nbytes == 0) return {nullptr, nullptr, &VulkanAllocator::deleter, c10::Device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())};
-    sync_memory_budget(nbytes);
-    VulkanBuffer* buffer = out_of_memory_buffer(nbytes, MemoryUsage::DEVICE_ONLY);
-    allocated_bytes.fetch_add(nbytes, std::memory_order_relaxed);
-    return {buffer, buffer, &VulkanAllocator::deleter, c10::Device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())};
+    c10::Device device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice());
+    if (nbytes == 0) return {nullptr, nullptr, &VulkanAllocator::deleter, device};
+
+    VulkanBuffer* buffer = allocateBuffer(VulkanContext::Instance().CurrentDeviceContext(), nbytes, MemoryUsage::DEVICE_ONLY);
+    return {buffer, buffer, &VulkanAllocator::deleter, device};
 }
 
 void VulkanAllocator::deleter(void* ptr)
-{    
-    if (ptr == nullptr) return;
+{
+    if (ptr == nullptr || VulkanContext::IsInBadFork()) return;
     VulkanBuffer* buffer = static_cast<VulkanBuffer*>(ptr);
-    globalVulkanAllocator.allocated_bytes.fetch_sub(buffer->size(), std::memory_order_relaxed);
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    device->cache.deleteBuffer(buffer, MemoryUsage::DEVICE_ONLY);
+    buffer->owner()->cache.deleteBuffer(buffer);
 }
 
 void VulkanAllocator::copy_data(void* dest, const void* src, std::size_t count) const
@@ -29,125 +30,74 @@ void VulkanAllocator::copy_data(void* dest, const void* src, std::size_t count) 
 void VulkanAllocator::copy_host_to_device(void* dest, uint64_t dest_offset, const void* src, std::size_t count) const
 {
     if (count == 0) return;
-    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
-    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.");
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.");
     VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    DeviceContext* device = dstBuffer->owner();
 
-    VulkanBuffer* stagingBuffer = out_of_memory_buffer(count, MemoryUsage::HOST_TO_DEVICE);
-    memcpy(stagingBuffer->data(), src, count);
+    VulkanBuffer* stagingBuffer = allocateBuffer(device, count, MemoryUsage::HOST_TO_DEVICE);
+    std::memcpy(stagingBuffer->data(), src, count);
     stagingBuffer->flush();
 
-    std::unique_lock<std::mutex> lock(mutex_);
-    deleteQueue.push_back(stagingBuffer);
-    lock.unlock();
-
-    device->shader_manager->dispatchCopy(stagingBuffer, /* srcOffset = */ 0, dstBuffer, dest_offset, count);
+    device->shader_manager->dispatchCopy(stagingBuffer, /* srcOffset = */ 0, dstBuffer, dest_offset, count, /* release_after = */ stagingBuffer);
 }
 
 void VulkanAllocator::copy_device_to_host(void* dest, const void* src, uint64_t src_offset, std::size_t count) const
 {
     if (count == 0) return;
-    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
-    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
-    VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.");
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.");
+    VulkanBuffer* srcBuffer = static_cast<VulkanBuffer*>(const_cast<void*>(src));
+    DeviceContext* device = srcBuffer->owner();
 
-    VulkanBuffer* stagingBuffer = out_of_memory_buffer(count, MemoryUsage::DEVICE_TO_HOST);
+    VulkanBuffer* stagingBuffer = allocateBuffer(device, count, MemoryUsage::DEVICE_TO_HOST);
     device->shader_manager->dispatchCopy(srcBuffer, src_offset, stagingBuffer, /* dstOffset = */ 0, count);
 
-    device->flush();
-    clearResources();
-    stagingBuffer->invalidate();
-    memcpy(dest, stagingBuffer->data(), count);
-    device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
-}
+    try {
+        device->flush();
+    } catch (...) {
+        device->cache.deleteBuffer(stagingBuffer);
+        throw;
+    }
 
-void VulkanAllocator::copy_device_to_host(void* dest, VulkanBuffer* stagingBuffer, std::size_t count) const
-{
-    if (count == 0) return;
-    TORCH_CHECK(stagingBuffer != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
-    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-
-    device->flush();
-    clearResources();
     stagingBuffer->invalidate();
-    memcpy(dest, stagingBuffer->data(), count);
-    device->cache.deleteBuffer(stagingBuffer, MemoryUsage::DEVICE_TO_HOST);
+    std::memcpy(dest, stagingBuffer->data(), count);
+    device->cache.deleteBuffer(stagingBuffer);
 }
 
 void VulkanAllocator::copy_device_to_device(void* dest, uint64_t dest_offset, const void* src, uint64_t src_offset, std::size_t count) const
 {
     if (count == 0) return;
-    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.")
-    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.")
+    TORCH_CHECK(src != nullptr, "torchvulkan [ERROR]: Source tensor cannot be null.");
+    TORCH_CHECK(dest != nullptr, "torchvulkan [ERROR]: Destination tensor cannot be null.");
     VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
-    VulkanBuffer* srcBuffer = (VulkanBuffer*)(src);
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    VulkanBuffer* srcBuffer = static_cast<VulkanBuffer*>(const_cast<void*>(src));
+    TORCH_CHECK(srcBuffer->owner() == dstBuffer->owner(), "torchvulkan [ERROR]: copy_device_to_device needs both buffers on the same device.");
 
-    device->shader_manager->dispatchCopy(srcBuffer, src_offset, dstBuffer, dest_offset, count);
+    dstBuffer->owner()->shader_manager->dispatchCopy(srcBuffer, src_offset, dstBuffer, dest_offset, count);
 }
 
-VulkanBuffer* VulkanAllocator::out_of_memory_buffer(size_t size, MemoryUsage usage) const
+VulkanBuffer* VulkanAllocator::createBuffer(DeviceContext* device, size_t size, MemoryUsage usage)
 {
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
+    size_t rounded = VulkanCache::roundBufferSize(size);
+    if (usage == MemoryUsage::DEVICE_ONLY && device->memoryUsage() + rounded > device->memoryBudget()) return nullptr;
 
-    VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage);
-    if (buffer != VK_NULL_HANDLE) return buffer;
-
-    VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    if (allocated_bytes.load() < vram_limit.load()) {
-        buffer = new VulkanBuffer(device->allocator, device->device);
-        result = buffer->createBuffer(size, usage);
-        if (result == VK_SUCCESS) return buffer;
-        delete buffer;
-        buffer = nullptr;
-    }
-
-    device->flush();
-    clearResources();
-    device->cache.clearCache();
-    sync_memory_budget(0);
-    
-    if (allocated_bytes.load() < vram_limit.load()) {
-        if (buffer == VK_NULL_HANDLE) buffer = new VulkanBuffer(device->allocator, device->device);
-        result = buffer->createBuffer(size, usage);
-        if (result == VK_SUCCESS) return buffer;
-        delete buffer;
-    }
-
-    uint64_t bytes_remaining = vram_limit.load() - (allocated_bytes.load() - size);
-    TORCH_CHECK(false, "torchvulkan [ERROR]: Allocation failed with error code ", result, 
-        ". Tried to allocate ", size, " bytes, but there is only ", bytes_remaining, " bytes remaining");
+    auto buffer = std::make_unique<VulkanBuffer>(device);
+    if (buffer->createBuffer(rounded, usage) != VK_SUCCESS) return nullptr;
+    return buffer.release();
 }
 
-void VulkanAllocator::sync_memory_budget(size_t size) const 
+VulkanBuffer* VulkanAllocator::allocateBuffer(DeviceContext* device, size_t size, MemoryUsage usage)
 {
-    uint32_t num_allocations = num_allocations_since_sync.fetch_add(1, std::memory_order_relaxed);
-    if (size != 0 && num_allocations < SYNC_THRESHOLD) return;
-    
-    DeviceContext* device_context = VulkanContext::Instance().CurrentDeviceContext();
-    VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
-    vmaGetHeapBudgets(device_context->allocator, budgets); 
+    if (VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage)) return buffer;
+    if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
-    uint32_t heap_idx = device_context->vram_heap_index;
-    size_t os_budget = budgets[heap_idx].budget;
-    size_t actual_vma_usage = budgets[heap_idx].usage;
+    device->shader_manager->flushAndReleaseBuffers();
+    if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
-    vram_limit.store(os_budget * VRAM_USAGE_LIMIT, std::memory_order_relaxed);
-    allocated_bytes.store(actual_vma_usage, std::memory_order_relaxed);
-    num_allocations_since_sync.store(0, std::memory_order_relaxed);
-}
-
-void VulkanAllocator::clearResources() const
-{    
-    std::lock_guard<std::mutex> lock(mutex_);
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    for (size_t i = 0; i < deleteQueue.size(); i++) {
-        VulkanBuffer* buffer = deleteQueue[i];
-        device->cache.deleteBuffer(buffer, buffer->usage());
-    }
-
-    deleteQueue.clear();
+    size_t budget = device->memoryBudget();
+    size_t used = device->memoryUsage();
+    TORCH_CHECK_WITH(OutOfMemoryError, false, "torchvulkan [ERROR]: Out of memory on ", device->properties.deviceName, ". Tried to allocate ",
+        VulkanCache::roundBufferSize(size), " bytes with ", used, " of ", budget, " bytes in use."
+    );
 }

@@ -1,47 +1,39 @@
 #include "cache.h"
-#include "vulkan_context.h"
+#include "device_context.h"
+#include "generated/shader_kernels.h"
 
-#ifdef _MSC_VER
-#include <intrin.h>
-static inline int __builtin_clzll(unsigned long long x) {
-    unsigned long index;
-    if (_BitScanReverse64(&index, x)) {
-        return 63 - index;
-    }
-    return 64;
-}
-#endif
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cmath>
 
-VkCommandBuffer VulkanCache::allocateCommandBuffer(VkCommandPool commandPool)
+VkCommandBuffer VulkanCache::allocateCommandBuffer()
 {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
 
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (!commandBufferPool.empty()) { 
+    // the command pool is externally synchronised, so every use of it holds the lock
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!commandBufferPool.empty()) {
         cmd = commandBufferPool.back();
         commandBufferPool.pop_back();
-        lock.unlock();
-
-        VK_CHECK(device_table.vkResetCommandBuffer(cmd, 0));
+        VK_CHECK(owner_->device_table.vkResetCommandBuffer(cmd, 0));
     }
-    else 
+    else
     {
-        lock.unlock();
-
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool;
+        allocInfo.commandPool = owner_->commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandBufferCount = 1;
 
-        VK_CHECK(device_table.vkAllocateCommandBuffers(device_, &allocInfo, &cmd));
+        VK_CHECK(owner_->device_table.vkAllocateCommandBuffers(owner_->device, &allocInfo, &cmd));
     }
 
     // a reused buffer is no longer recording, so every buffer we hand out is begun here
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    device_table.vkBeginCommandBuffer(cmd, &beginInfo);
+    VK_CHECK(owner_->device_table.vkBeginCommandBuffer(cmd, &beginInfo));
 
     return cmd;
 }
@@ -58,16 +50,16 @@ VkFence VulkanCache::allocateFence()
     if (!fencePool.empty()) {
         VkFence fence = fencePool.back();
         fencePool.pop_back();
-        VK_CHECK(device_table.vkResetFences(device_, 1, &fence));
+        lock.unlock();
+        VK_CHECK(owner_->device_table.vkResetFences(owner_->device, 1, &fence));
         return fence;
     }
     lock.unlock();
 
-    VkFence fence;
+    VkFence fence = VK_NULL_HANDLE;
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = 0;
-    VK_CHECK(device_table.vkCreateFence(device_, &fenceInfo, nullptr, &fence));
+    VK_CHECK(owner_->device_table.vkCreateFence(owner_->device, &fenceInfo, nullptr, &fence));
     return fence;
 }
 
@@ -77,59 +69,90 @@ void VulkanCache::deleteFence(VkFence fence)
     fencePool.push_back(fence);
 }
 
-size_t VulkanCache::getBinIndex(size_t size)
+size_t VulkanCache::roundBufferSize(size_t size)
 {
-    if (size == 0) return 0;
-    return 64 - __builtin_clzll(size - 1); // builtin compiler method (count 0's)
+    static constexpr size_t MIN_BUFFER_SIZE = 256;
+    if (size <= MIN_BUFFER_SIZE) return MIN_BUFFER_SIZE;
+
+    // size is in (2^k, 2^(k+1)]; round up to a multiple of 2^k / 4
+    size_t k = std::bit_width(size - 1) - 1;
+    size_t step = size_t(1) << (k - 2);
+    return ((size + step - 1) / step) * step;
 }
 
-size_t VulkanCache::nextPowerOf2(size_t n) 
+std::unordered_map<size_t, std::vector<VulkanBuffer*>>& VulkanCache::poolFor(MemoryUsage usage)
 {
-    if (n <= 1) return 0; 
-    
-    n--;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    n |= (n >> 16) >> 16; 
-    n++;
-    
-    return n;
+    return usage == MemoryUsage::DEVICE_ONLY ? deviceBufferPool : stagingBufferPool;
 }
 
 VulkanBuffer* VulkanCache::allocateBuffer(size_t size, MemoryUsage usage)
 {
-    std::vector<VulkanBuffer*>* pools = (usage == MemoryUsage::DEVICE_ONLY) ? deviceBufferPool : stagingBufferPool;
-    size_t binIndex = getBinIndex(nextPowerOf2(size));
+    size_t rounded = roundBufferSize(size);
+
     std::lock_guard<std::mutex> lock(mutex_);
+    auto& pool = poolFor(usage);
+    auto it = pool.find(rounded);
+    if (it == pool.end() || it->second.empty()) return nullptr;
 
-    if (!pools[binIndex].empty()) {
-        VulkanBuffer* buffer = pools[binIndex].back();
-        if (buffer->size() >= size) {
-            pools[binIndex].pop_back();
-            return buffer;
-        }
-    }
-
-    size_t nextBin = binIndex + 1;
-    if (nextBin < NUM_BINS && !pools[nextBin].empty()) {
-        VulkanBuffer* buffer = pools[nextBin].back();
-        pools[nextBin].pop_back();
-        return buffer;
-    }
-
-    return VK_NULL_HANDLE;
+    VulkanBuffer* buffer = it->second.back();
+    it->second.pop_back();
+    return buffer;
 }
 
-void VulkanCache::deleteBuffer(VulkanBuffer* buffer, MemoryUsage usage)
+void VulkanCache::deleteBuffer(VulkanBuffer* buffer)
 {
-    std::vector<VulkanBuffer*>* pools = (usage == MemoryUsage::DEVICE_ONLY) ? deviceBufferPool : stagingBufferPool;
-    size_t binIndex = getBinIndex(nextPowerOf2(buffer->size()));
+    std::lock_guard<std::mutex> lock(mutex_);
+    poolFor(buffer->usage())[buffer->size()].push_back(buffer);
+}
+
+void VulkanCache::releaseBuffers()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto* pool : {&deviceBufferPool, &stagingBufferPool}) {
+        for (auto& [size, buffers] : *pool) {
+            for (VulkanBuffer* buffer : buffers) delete buffer;
+        }
+        pool->clear();
+    }
+}
+
+void VulkanCache::clear()
+{
+    if (owner_ == nullptr || owner_->device == VK_NULL_HANDLE) return;
+    releaseBuffers();
 
     std::lock_guard<std::mutex> lock(mutex_);
-    pools[binIndex].push_back(buffer);
+    for (VkFence fence : fencePool) owner_->device_table.vkDestroyFence(owner_->device, fence, nullptr);
+    fencePool.clear();
+
+    if (!commandBufferPool.empty()) {
+        owner_->device_table.vkFreeCommandBuffers(owner_->device, owner_->commandPool, static_cast<uint32_t>(commandBufferPool.size()), commandBufferPool.data());
+        commandBufferPool.clear();
+    }
+}
+
+static uint8_t coop_component_to_scalar(VkComponentTypeKHR dtype)
+{
+    switch (dtype) {
+        case VK_COMPONENT_TYPE_FLOAT16_KHR: return static_cast<uint8_t>(at::ScalarType::Half);
+        case VK_COMPONENT_TYPE_FLOAT32_KHR: return static_cast<uint8_t>(at::ScalarType::Float);
+        case VK_COMPONENT_TYPE_FLOAT64_KHR: return static_cast<uint8_t>(at::ScalarType::Double);
+        case COMPONENT_TYPE_BFLOAT16:       return static_cast<uint8_t>(at::ScalarType::BFloat16);
+        case VK_COMPONENT_TYPE_SINT8_KHR:   return static_cast<uint8_t>(at::ScalarType::Char);
+        case VK_COMPONENT_TYPE_SINT16_KHR:  return static_cast<uint8_t>(at::ScalarType::Short);
+        case VK_COMPONENT_TYPE_SINT32_KHR:  return static_cast<uint8_t>(at::ScalarType::Int);
+        case VK_COMPONENT_TYPE_SINT64_KHR:  return static_cast<uint8_t>(at::ScalarType::Long);
+        case VK_COMPONENT_TYPE_UINT8_KHR:   return static_cast<uint8_t>(at::ScalarType::Byte);
+        case VK_COMPONENT_TYPE_UINT16_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt16);
+        case VK_COMPONENT_TYPE_UINT32_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt32);
+        case VK_COMPONENT_TYPE_UINT64_KHR:  return static_cast<uint8_t>(at::ScalarType::UInt64);
+        default:                            return static_cast<uint8_t>(c10::ScalarType::Undefined);
+    }
+}
+
+static uint32_t coop_config_key(uint8_t a, uint8_t b, uint8_t c, uint8_t result)
+{
+    return (uint32_t(a) << 24) | (uint32_t(b) << 16) | (uint32_t(c) << 8) | uint32_t(result);
 }
 
 void VulkanCache::addCoopMatConfig(VkComponentTypeKHR aType, VkComponentTypeKHR bType, VkComponentTypeKHR cType, VkComponentTypeKHR resultType, CoopMatConfig config)
