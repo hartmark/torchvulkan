@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <limits>
 #include <tuple>
 #include "vulkan/memory.h"
 #include "vulkan/vulkan_context.h"
@@ -21,11 +22,11 @@ void dispatch_nllloss_shader(
     NllLossMode mode,
     uint32_t N,
     uint32_t C,
-    int32_t ignore_index,
+    int64_t ignore_index,
     uint32_t total_threads)
 {
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(in.scalar_type(), 1);
+    DeviceContext* device = get_device_context(in);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(in.scalar_type(), 1, device);
     ShaderKey shader_key{torchvulkan::Kernel::NLLLOSS, in.scalar_type()};
 
     SpecializationBuilder spd{};
@@ -37,13 +38,13 @@ void dispatch_nllloss_shader(
     pcs.push(get_tensor_address(in))
        .push(get_tensor_address(target))
        .push(get_tensor_address(out))
+       .push(ignore_index)
        .push(N)
-       .push(C)
-       .push(ignore_index);
+       .push(C);
 
-    uint32_t groupX = (total_threads + (workgroupSizeX - 1)) / workgroupSizeX;
+    uint32_t groupX = get_group_count(total_threads, workgroupSizeX);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    PushConstants pushConstants = pcs.build();
     device->shader_manager->dispatchShader(
         shader_key,
         specialization,
@@ -62,7 +63,7 @@ at::Tensor gather_weight(
     const at::Tensor& options_like,
     uint32_t N,
     uint32_t C,
-    int32_t ignore_index)
+    int64_t ignore_index)
 {
     at::Tensor weight_c = weight.has_value() && weight->defined()
         ? weight->to(options_like.scalar_type()).contiguous()
@@ -82,7 +83,7 @@ std::tuple<at::Tensor, at::Tensor> nll_loss_forward_vulkan(
 {
     TORCH_CHECK(self.dim() == 1 || self.dim() == 2, "torchvulkan [ERROR]: nll_loss only supports 1D (unbatched) or 2D input.");
 
-    if (!is_dtype_supported(self.scalar_type())) {
+    if (!is_dtype_supported(self, self.scalar_type()) || self.numel() > std::numeric_limits<int32_t>::max()) {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", self.scalar_type(), ". Falling back to CPU.");
         c10::optional<at::Tensor> cpu_weight = weight.has_value() && weight->defined() ? c10::optional<at::Tensor>(weight->cpu()) : c10::nullopt;
         auto [cpu_output, cpu_total_weight] = at::nll_loss_forward(self.cpu(), target.cpu(), cpu_weight, reduction, ignore_index);
@@ -95,12 +96,11 @@ std::tuple<at::Tensor, at::Tensor> nll_loss_forward_vulkan(
 
     uint32_t N = static_cast<uint32_t>(input.size(0));
     uint32_t C = static_cast<uint32_t>(input.size(1));
-    int32_t ignore_index32 = static_cast<int32_t>(ignore_index);
 
     at::Tensor losses = at::empty({(int64_t)N}, input.options());
-    if (N > 0) dispatch_nllloss_shader(input, target_c, losses, NllLossMode::FORWARD_GATHER, N, C, ignore_index32, N);
+    if (N > 0) dispatch_nllloss_shader(input, target_c, losses, NllLossMode::FORWARD_GATHER, N, C, ignore_index, N);
 
-    at::Tensor gathered_weight = gather_weight(weight, target_c, input, N, C, ignore_index32);
+    at::Tensor gathered_weight = gather_weight(weight, target_c, input, N, C, ignore_index);
     at::Tensor weighted_losses = torchvulkan::multiply_vulkan(losses, gathered_weight);
     at::Tensor total_weight = torchvulkan::sum_vulkan(gathered_weight, c10::nullopt);
 
@@ -123,7 +123,7 @@ at::Tensor nll_loss_backward_vulkan(
 {
     TORCH_CHECK(self.dim() == 1 || self.dim() == 2, "torchvulkan [ERROR]: nll_loss only supports 1D (unbatched) or 2D input.");
 
-    if (!is_dtype_supported(self.scalar_type())) {
+    if (!is_dtype_supported(self, self.scalar_type()) || self.numel() > std::numeric_limits<int32_t>::max()) {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", self.scalar_type(), ". Falling back to CPU.");
         c10::optional<at::Tensor> cpu_weight = weight.has_value() && weight->defined() ? c10::optional<at::Tensor>(weight->cpu()) : c10::nullopt;
         at::Tensor cpu_grad_input = at::nll_loss_backward(
@@ -137,9 +137,8 @@ at::Tensor nll_loss_backward_vulkan(
 
     uint32_t N = static_cast<uint32_t>(input.size(0));
     uint32_t C = static_cast<uint32_t>(input.size(1));
-    int32_t ignore_index32 = static_cast<int32_t>(ignore_index);
 
-    at::Tensor gathered_weight = gather_weight(weight, target_c, input, N, C, ignore_index32);
+    at::Tensor gathered_weight = gather_weight(weight, target_c, input, N, C, ignore_index);
 
     // pre-scale the (possibly 0-dim/broadcast) grad_output + reduction + per-class weight into one [N] tensor,
     // so the shader only has to scatter it back into grad_input.
@@ -151,7 +150,7 @@ at::Tensor nll_loss_backward_vulkan(
     per_sample_grad = per_sample_grad.contiguous();
 
     at::Tensor grad_input = at::empty({(int64_t)N, (int64_t)C}, input.options());
-    if (N > 0) dispatch_nllloss_shader(per_sample_grad, target_c, grad_input, NllLossMode::BACKWARD_SCATTER, N, C, ignore_index32, N * C);
+    if (N > 0) dispatch_nllloss_shader(per_sample_grad, target_c, grad_input, NllLossMode::BACKWARD_SCATTER, N, C, ignore_index, N * C);
 
     return unbatched ? grad_input.squeeze(0) : grad_input;
 }
