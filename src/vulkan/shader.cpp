@@ -282,11 +282,16 @@ VkPipeline VulkanShaderManager::createPipeline(uint32_t binary, const Specializa
     stageInfo.pName = "main";
     stageInfo.pSpecializationInfo = &specInfo;
 
+    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroupSize{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO};
+    if (device->support_subgroup_control)
+    {
+        subgroupSize.requiredSubgroupSize = device->subgroup_size;
+        stageInfo.pNext = &subgroupSize;
+    }
+
     VkPipelineCreateFlags flags = 0;
     const bool capturePipelineStatistics = device->support_pipeline_statistics && VulkanContext::Instance().profilingEnabled();
-    if (capturePipelineStatistics) {
-        flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
-    }
+    if (capturePipelineStatistics) flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
 
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;

@@ -280,15 +280,25 @@ void VulkanContext::createDeviceContexts()
 
         vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
 
+        VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+        VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        features2.pNext = &features13;
+        vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
         context->properties = props2.properties;
-        context->subgroup_size = subgroupProps.subgroupSize;
+        context->driver_id = props12.driverID;
+
+        // every pipeline is pinned to the largest subgroup size (see createPipeline); without control, kernels get the driver's default
+        context->support_subgroup_control = features13.subgroupSizeControl && (props13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT);
+        context->subgroup_size = context->support_subgroup_control ? props13.maxSubgroupSize : subgroupProps.subgroupSize;
 
         // subgroup reductions need arithmetic + shuffle ops available in compute shaders
         const VkSubgroupFeatureFlags requiredSubgroupOps = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
         context->support_subgroup_arithmetic =
             (subgroupProps.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
             (subgroupProps.supportedOperations & requiredSubgroupOps) == requiredSubgroupOps &&
-            subgroupProps.subgroupSize > 0;
+            subgroupProps.subgroupSize > 0 &&
+            context->support_subgroup_control;
 
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -388,7 +398,6 @@ void VulkanContext::createDeviceWithExtensions()
         device->support_int16 = supportedFeatures2.features.shaderInt16 && enable11.storageBuffer16BitAccess;
         device->support_int8 = supported12.shaderInt8 && supported12.storageBuffer8BitAccess;
         device->support_subgroup_extended_types = supported12.shaderSubgroupExtendedTypes;
-        device->support_subgroup_control = supported13.subgroupSizeControl;
 
         VkPhysicalDeviceShaderBfloat16FeaturesKHR enableBfloat16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
         VkPhysicalDeviceCooperativeMatrixFeaturesKHR enableCoopMatrices{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
