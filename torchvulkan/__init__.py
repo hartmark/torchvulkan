@@ -31,8 +31,8 @@ def device(dev):
     index = dev if isinstance(dev, int) or dev is None else torch.device(dev).index
     return torch.accelerator.device_index(index)
 
-def synchronize() -> None:
-    _C.synchronize()
+def synchronize(device=None) -> None:
+    _C.synchronize(_device_index(device))
 
 def empty_cache() -> None:
     _C.empty_cache()

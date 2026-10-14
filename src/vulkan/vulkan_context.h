@@ -14,22 +14,26 @@ public:
     // delete copy constructors
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
-    
+
     VkInstance instance = VK_NULL_HANDLE;
     std::vector<DeviceContext*> devices;
 
     DeviceContext* CurrentDeviceContext() { return devices[currentDeviceIndex]; }
+    DeviceContext* GetDeviceContext(c10::DeviceIndex index);
     static c10::DeviceIndex CurrentDevice() { return currentDeviceIndex; }
     static void SetCurrentDevice(c10::DeviceIndex deviceIndex) { currentDeviceIndex = deviceIndex; }
-    uint32_t getDeviceCount() { return devices.size(); }
+    uint32_t getDeviceCount() { return static_cast<uint32_t>(devices.size()); }
+
     bool isStrict() { return isStrict_; }
     bool profilingEnabled() { return enableProfiling_; }
+    static uint64_t ValidationErrorCount();
     static bool IsInBadFork();
+    static bool IsInitialized();
 
 private:
     VulkanContext();
     ~VulkanContext();
-    
+
     void initVulkan();
     void createDeviceContexts();
     void createDeviceWithExtensions();

@@ -9,6 +9,7 @@
 class VulkanShaderManager;
 
 struct DeviceContext {
+    c10::DeviceIndex index = -1;
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;

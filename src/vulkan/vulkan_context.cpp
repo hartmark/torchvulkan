@@ -577,12 +577,30 @@ void VulkanContext::validateDevices()
     }
 
     devices = std::move(validDevices);
-    if (devices.empty()) TORCH_CHECK(false, "torchvulkan [WARNING]: No Vulkan devices could be initialized.");
+    TORCH_CHECK(!devices.empty(), "torchvulkan [ERROR]: No Vulkan devices could be initialized.");
+    for (size_t i = 0; i < devices.size(); i++) devices[i]->index = static_cast<c10::DeviceIndex>(i);
+}
+
+DeviceContext* VulkanContext::GetDeviceContext(c10::DeviceIndex index)
+{
+    if (index < 0) index = currentDeviceIndex;
+    TORCH_CHECK(index >= 0 && index < static_cast<c10::DeviceIndex>(devices.size()), "torchvulkan [ERROR]: Invalid Vulkan device index ", index, ".");
+    return devices[index];
+}
+
+uint64_t VulkanContext::ValidationErrorCount()
+{
+    return validationErrors.load();
 }
 
 bool VulkanContext::IsInBadFork()
 {
     return inBadFork;
+}
+
+bool VulkanContext::IsInitialized()
+{
+    return contextInitialized;
 }
 
 void VulkanContext::createGenerators()

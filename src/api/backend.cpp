@@ -3,6 +3,7 @@
 #include "vulkan/vulkan_context.h"
 #include "vulkan/allocator.h"
 #include "vulkan/generator.h"
+#include "vulkan/shader.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.doc() = "torchvulkan backend";
@@ -24,16 +25,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     });
 
     m.def("current_device", []() -> int64_t {
-        try {
-            return static_cast<int64_t>(VulkanContext::CurrentDevice());
-        } catch (...) {
-            return 0;
-        }
+        return static_cast<int64_t>(VulkanContext::CurrentDevice());
     });
 
-    m.def("synchronize", []() {
-        VulkanContext::Instance().CurrentDeviceContext()->flush();
-    });
+    m.def("synchronize", [](int64_t device_index) {
+        VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->flush();
+    }, py::call_guard<py::gil_scoped_release>());
 
     m.def("_default_generator", [](int64_t device_index) {
         return py::reinterpret_steal<py::object>(THPGenerator_initDefaultGenerator(VulkanGeneratorImpl::default_generator(device_index)));
@@ -52,9 +49,19 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     });
 
     m.def("empty_cache", []() {
-        DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-        device->flush();
-        globalVulkanAllocator.clearResources();
-        device->cache.clearCache();
+        for (DeviceContext* device : VulkanContext::Instance().devices) device->shader_manager->flushAndReleaseBuffers();
+    }, py::call_guard<py::gil_scoped_release>());
+
+    m.def("_save_pipeline_caches", []() {
+        if (!VulkanContext::IsInitialized() || VulkanContext::IsInBadFork()) return;
+        for (DeviceContext* device : VulkanContext::Instance().devices) device->shader_manager->savePipelineCache();
+    });
+
+    m.def("_memory_usage", [](int64_t device_index) -> uint64_t {
+        return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->memoryUsage();
+    });
+
+    m.def("_validation_error_count", []() -> uint64_t {
+        return VulkanContext::ValidationErrorCount();
     });
 }
