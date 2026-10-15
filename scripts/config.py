@@ -158,6 +158,27 @@ KERNELS = [
     Kernel('ctc', 'ops/ctc.slang', [
         Entry('ctc_main', [F64, F32]),
     ]),
+    Kernel('cholesky', 'ops/cholesky.slang', [
+        Entry('cholesky_main', [F64, F32]),
+    ]),
+    Kernel('lu', 'ops/lu.slang', [
+        Entry('lu_main', [F64, F32]),
+    ]),
+    Kernel('triangular_solve', 'ops/triangular_solve.slang', [
+        Entry('triangular_solve_main', [F64, F32]),
+    ]),
+    Kernel('householder', 'ops/householder.slang', [
+        Entry('householder_main', [F64, F32]),
+    ]),
+    Kernel('jacobi', 'ops/jacobi.slang', [
+        Entry('jacobi_main', [F64, F32]),
+    ]),
+    Kernel('ldl', 'ops/ldl.slang', [
+        Entry('ldl_main', [F64, F32]),
+    ]),
+    Kernel('eig', 'ops/eig.slang', [
+        Entry('eig_main', [F64, F32]),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
