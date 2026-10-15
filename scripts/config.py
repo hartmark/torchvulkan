@@ -155,6 +155,9 @@ KERNELS = [
     Kernel('grid_sample', 'ops/grid_sample.slang', [
         Entry('grid_sample_main', [F64, F32]),
     ]),
+    Kernel('ctc', 'ops/ctc.slang', [
+        Entry('ctc_main', [F64, F32]),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
