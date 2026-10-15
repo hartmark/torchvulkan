@@ -129,6 +129,11 @@ public struct Logaddexp2Op<T : ITorchVulkan> : IBinaryOp<T>
     public static T eval(T a, T b, T alpha) { return T.ext_logaddexp2(a, b); }
 }
 
+public struct FloorDivideOp<T : ITorchVulkan> : IBinaryOp<T>
+{
+    public static T eval(T a, T b, T alpha) { return T.ext_floor_divide(a, b); }
+}
+
 public void baseBinaryKernel<T : ITorchVulkan, Op : IBinaryOp<T>, let VEC_SIZE : int>(
     uint3 gi,
     uint64_t address_a,
@@ -228,6 +233,7 @@ public void dispatchBinary<T : ITorchVulkan, let VEC_SIZE : int>(
     case 16: baseBinaryKernel<T, XlogyOp<T>, VEC_SIZE>(gi, pcs.tensor_a, pcs.tensor_b, pcs.tensor_out, pcs.metadata, pcs.numel, pcs.alpha, pcs.scalar_value); break;
     case 17: baseBinaryKernel<T, LogaddexpOp<T>, VEC_SIZE>(gi, pcs.tensor_a, pcs.tensor_b, pcs.tensor_out, pcs.metadata, pcs.numel, pcs.alpha, pcs.scalar_value); break;
     case 18: baseBinaryKernel<T, Logaddexp2Op<T>, VEC_SIZE>(gi, pcs.tensor_a, pcs.tensor_b, pcs.tensor_out, pcs.metadata, pcs.numel, pcs.alpha, pcs.scalar_value); break;
+    case 19: baseBinaryKernel<T, FloorDivideOp<T>, VEC_SIZE>(gi, pcs.tensor_a, pcs.tensor_b, pcs.tensor_out, pcs.metadata, pcs.numel, pcs.alpha, pcs.scalar_value); break;
     default: break;
     }
 }
