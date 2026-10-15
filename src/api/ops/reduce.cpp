@@ -30,14 +30,9 @@ at::Tensor dispatch_reduce_shader(
     if (ndim == 0) return self.clone();
 
     dim = c10::maybe_wrap_dim(dim, ndim);
-    int64_t reduce_ndim = std::max<int64_t>(ndim, 1);
+    TORCH_CHECK(ndim <= MAX_DIMS, "torchvulkan [ERROR]: Tensor rank (", ndim, ") exceeds the maximum supported (", MAX_DIMS, ").");
 
-    TORCH_CHECK(reduce_ndim <= MAX_DIMS, "torchvulkan [ERROR]: Coalesced dimensions (", reduce_ndim, ") exceed maximum supported (", MAX_DIMS, ").");
-
-    std::vector<int64_t> self_sizes(self.sizes().begin(), self.sizes().end());
-    std::vector<int64_t> self_strides(self.strides().begin(), self.strides().end());
-
-    std::vector<int64_t> out_sizes = self_sizes;
+    std::vector<int64_t> out_sizes(self.sizes().begin(), self.sizes().end());
     int64_t reduce_size = out_sizes[dim];
     out_sizes[dim] = 1;
 
@@ -49,10 +44,7 @@ at::Tensor dispatch_reduce_shader(
         return keepdim ? out : out.squeeze(dim);
     }
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t op = static_cast<uint32_t>(operation);
-    int32_t ndim32 = static_cast<int32_t>(reduce_ndim);
-
+    DeviceContext* device = get_device_context(self);
     at::ScalarType stype = self.scalar_type();
     bool dtype_needs_extended = c10::elementSize(stype) != 4;
     bool dtype_supported_subgroup =
@@ -68,53 +60,57 @@ at::Tensor dispatch_reduce_shader(
         reduce_size >= static_cast<int64_t>(device->subgroup_size) &&
         numel_out <= static_cast<uint64_t>(device->properties.limits.maxComputeWorkGroupCount[0]);
 
-    uint32_t workgroupSizeX = use_subgroup
-        ? device->subgroup_size
-        : get_dtype_workgroup_size(self.scalar_type(), 1);
+    uint32_t workgroupSizeX = use_subgroup ? device->subgroup_size : get_dtype_workgroup_size(stype, 1, device);
+
+    static constexpr uint64_t TARGET_ITEMS = 1u << 14;
+    static constexpr uint64_t MIN_CHUNK = 1024;
+    
+    uint64_t split = 1;
+    if (numel_out < TARGET_ITEMS && static_cast<uint64_t>(reduce_size) >= 2 * MIN_CHUNK) {
+        split = std::min<uint64_t>((TARGET_ITEMS + numel_out - 1) / numel_out, static_cast<uint64_t>(reduce_size) / MIN_CHUNK);
+    }
+    uint32_t chunk = static_cast<uint32_t>((reduce_size + split - 1) / split);
+    split = (reduce_size + chunk - 1) / chunk; // every chunk non-empty
+
+    at::Tensor partial = split == 1 ? out : at::empty({static_cast<int64_t>(numel_out), static_cast<int64_t>(split)}, self.options());
+
     torchvulkan::Kernel kernel = use_subgroup ? torchvulkan::Kernel::REDUCE_SUBGROUP : torchvulkan::Kernel::REDUCE;
-    ShaderKey shader_key{kernel, self.scalar_type()};
+    int32_t ndim32 = static_cast<int32_t>(ndim);
 
     SpecializationBuilder spd{};
-    spd.push(op)
+    spd.push(static_cast<uint32_t>(operation))
        .push(ndim32)
        .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    for (int64_t i = 0; i < reduce_ndim; i++) {
-        int64_t actual_dim = reduce_ndim - 1 - i;
-        sizes.set(i, static_cast<uint32_t>(out_sizes[actual_dim]));
-        strides_in[i] = static_cast<uint32_t>(self_strides[actual_dim]);
-    }
-
-    MetadataBuilder metadataBuilder{};
-    metadataBuilder.push(sizes, ndim32)
-                   .push_array(strides_in, ndim32);
+    MetadataBuilder metadataBuilder = get_shape_metadata(out_sizes, {self.strides()});
     Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(self))
-       .push(get_tensor_address(out))
-       .push(device->shader_manager->registerMetadata(metadata))
+       .push(get_tensor_address(partial))
+       .push_metadata(&metadata)
        .push(numel_out)
-       .push(static_cast<uint32_t>(self_strides[dim]))
-       .push(static_cast<uint32_t>(reduce_size));
+       .push(static_cast<uint32_t>(self.stride(dim)))
+       .push(static_cast<uint32_t>(reduce_size))
+       .push(static_cast<uint32_t>(split))
+       .push(chunk);
 
-    uint32_t groupX = use_subgroup
-        ? static_cast<uint32_t>(numel_out)
-        : static_cast<uint32_t>((numel_out + (workgroupSizeX - 1)) / workgroupSizeX);
+    uint64_t work_items = numel_out * split;
+    uint32_t groupX = use_subgroup ? static_cast<uint32_t>(work_items) : get_group_count(work_items, workgroupSizeX);
 
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
     device->shader_manager->dispatchShader(
-        shader_key,
-        specialization,
-        pushConstants,
+        ShaderKey{kernel, stype},
+        spd.build(),
+        pcs.build(),
         /* read = */ {self},
-        /* write = */ {out},
+        /* write = */ {partial},
         groupX, 1, 1
     );
 
+    if (split > 1) {
+        at::Tensor folded = dispatch_reduce_shader(partial, 1, false, operation, empty_value, has_subgroup);
+        out = folded.view(out_sizes);
+    }
     return keepdim ? out : out.squeeze(dim);
 }
 
@@ -150,13 +146,8 @@ at::Tensor reduce_dims_vulkan(
     double empty_value,
     bool has_subgroup)
 {
-    if (!is_dtype_supported(self.scalar_type())) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", self.scalar_type(), ". Falling back to CPU.");
-        return cpu_reduce_fallback(self.cpu(), dims, keepdim, operation).to(self.device());
-    }
-
-    if (self.dim() > MAX_DIMS) {
-        TORCH_WARN_ONCE("torchvulkan [WARNING]: Tensor rank (", self.dim(), ") exceed maximum supported (", MAX_DIMS, "). Falling back to CPU.");
+    if (!is_dtype_supported(self, self.scalar_type()) || self.dim() > MAX_DIMS || !fits_32bit_indexing({self})) {
+        TORCH_WARN_ONCE("torchvulkan [WARNING]: A ", self.scalar_type(), " reduction of this shape can't run on the Vulkan device. Falling back to CPU.");
         return cpu_reduce_fallback(self.cpu(), dims, keepdim, operation).to(self.device());
     }
 
@@ -179,17 +170,25 @@ at::Tensor reduce_dims_vulkan(
     return result;
 }
 
+// the sum in its accumulation dtype (float32 for half and bfloat16), before it's cast to the output dtype
+at::Tensor sum_accumulated(
+    const at::Tensor& self,
+    at::OptionalIntArrayRef dim,
+    bool keepdim,
+    at::ScalarType out_dtype)
+{
+    at::Tensor acc = self.to(reduce_accumulate_dtype(out_dtype));
+    return reduce_dims_vulkan(acc, dim, keepdim, ReduceOp::SUM, 0.0, true);
+}
+
 at::Tensor sum_dim_vulkan(
     const at::Tensor& self,
     at::OptionalIntArrayRef dim,
     bool keepdim,
     c10::optional<at::ScalarType> dtype)
 {
-    at::Tensor self_typed = self.to(reduce_compute_dtype(self, dtype));
-    at::ScalarType out_dtype = self_typed.scalar_type();
-    at::Tensor acc = self_typed.to(reduce_accumulate_dtype(out_dtype));
-
-    return reduce_dims_vulkan(acc, dim, keepdim, ReduceOp::SUM, 0.0, true).to(out_dtype);
+    at::ScalarType out_dtype = reduce_compute_dtype(self, dtype);
+    return sum_accumulated(self, dim, keepdim, out_dtype).to(out_dtype);
 }
 
 } // namespace
@@ -249,9 +248,12 @@ at::Tensor mean_dim_vulkan(
     bool keepdim,
     c10::optional<at::ScalarType> dtype)
 {
-    if (self.dim() == 0) return dtype.has_value() ? self.to(*dtype) : self.clone();
-
-    at::Tensor summed = sum_dim_vulkan(self, dim, keepdim, dtype);
+    at::ScalarType out_dtype = dtype.value_or(self.scalar_type());
+    TORCH_CHECK(at::isFloatingType(out_dtype) || at::isComplexType(out_dtype),
+        "mean(): could not infer output dtype. ", (dtype.has_value() ? "Optional" : "Input"),
+        " dtype must be either a floating point or complex dtype. Got: ", out_dtype
+    );
+    if (self.dim() == 0) return self.to(out_dtype);
 
     int64_t count = 1;
     if (dim.has_value() && dim->size() > 0) {
@@ -260,7 +262,8 @@ at::Tensor mean_dim_vulkan(
         count = self.numel();
     }
 
-    return torchvulkan::divide_scalar_vulkan(summed, (double)count);
+    at::Tensor summed = sum_accumulated(self, dim, keepdim, out_dtype);
+    return torchvulkan::divide_scalar_vulkan(summed, (double)count).to(out_dtype);
 }
 
 at::Tensor mean_vulkan(
@@ -292,7 +295,7 @@ at::Tensor argreduce(
         d = c10::maybe_wrap_dim(*dim, x.dim());
     }
 
-    if (!is_dtype_supported(x.scalar_type()) || x.dim() == 0 || x.dim() > MAX_DIMS || x.numel() == 0) {
+    if (!is_dtype_supported(x, x.scalar_type()) || x.dim() == 0 || x.dim() > MAX_DIMS || x.numel() == 0 || !fits_32bit_indexing({x})) {
         at::Tensor cpu = op == ArgOp::ARGMAX ? at::argmax(self.cpu(), dim, keepdim) : at::argmin(self.cpu(), dim, keepdim);
         return cpu.to(self.device());
     }
@@ -305,51 +308,34 @@ at::Tensor argreduce(
     at::Tensor idx = at::empty(out_sizes, x.options().dtype(at::kLong));
     if (num_lines == 0) return keepdim ? idx : idx.squeeze(d);
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(x.scalar_type(), 1);
+    DeviceContext* device = get_device_context(x);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(x.scalar_type(), 1, device);
     ShaderKey shader_key{torchvulkan::Kernel::ARG_REDUCE, x.scalar_type()};
-    uint32_t opv = static_cast<uint32_t>(op);
     int32_t ndim32 = static_cast<int32_t>(ndim);
 
     SpecializationBuilder spd{};
-    spd.push(opv)
+    spd.push(static_cast<uint32_t>(op))
        .push(ndim32)
        .push(workgroupSizeX);
-    SpecializationArgs specialization = spd.build();
 
-    std::vector<int64_t> x_strides(x.strides().begin(), x.strides().end());
-
-    IntDivider sizes;
-    uint32_t strides_in[MAX_DIMS] = {0};
-    for (int64_t i = 0; i < ndim; i++) {
-        int64_t actual_dim = ndim - 1 - i;
-        sizes.set(i, static_cast<uint32_t>(out_sizes[actual_dim]));
-        strides_in[i] = static_cast<uint32_t>(x_strides[actual_dim]);
-    }
-
-    MetadataBuilder metadataBuilder{};
-    metadataBuilder.push(sizes, ndim32)
-                   .push_array(strides_in, ndim32);
+    MetadataBuilder metadataBuilder = get_shape_metadata(out_sizes, {x.strides()});
     Metadata metadata = metadataBuilder.build();
 
     PushConstantBuilder pcs{};
     pcs.push(get_tensor_address(x))
        .push(get_tensor_address(idx))
-       .push(device->shader_manager->registerMetadata(metadata))
+       .push_metadata(&metadata)
        .push(static_cast<uint64_t>(num_lines))
-       .push(static_cast<uint32_t>(x_strides[d]))
+       .push(static_cast<uint32_t>(x.stride(d)))
        .push(static_cast<uint32_t>(reduce_size));
 
-    uint32_t groupX = (static_cast<uint32_t>(num_lines) + (workgroupSizeX - 1)) / workgroupSizeX;
-
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
     device->shader_manager->dispatchShader(
         shader_key,
-        specialization,
-        pushConstants,
+        spd.build(),
+        pcs.build(),
         /* read = */ {x},
         /* write = */ {idx},
-        groupX, 1, 1
+        get_group_count(static_cast<uint64_t>(num_lines), workgroupSizeX), 1, 1
     );
 
     return keepdim ? idx : idx.squeeze(d);

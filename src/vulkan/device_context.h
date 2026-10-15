@@ -9,6 +9,7 @@
 class VulkanShaderManager;
 
 struct DeviceContext {
+    c10::DeviceIndex index = -1;
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;
@@ -16,9 +17,10 @@ struct DeviceContext {
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     uint32_t vram_heap_index = 0;
-    VolkDeviceTable device_table;
+    VolkDeviceTable device_table{};
     VkPhysicalDeviceProperties properties{};
-    VulkanShaderManager* shader_manager = VK_NULL_HANDLE;
+    VkDriverId driver_id = static_cast<VkDriverId>(0);
+    VulkanShaderManager* shader_manager = nullptr;
     VulkanCache cache;
     at::Generator generator;
     bool valid = true;
@@ -41,6 +43,12 @@ struct DeviceContext {
     bool support_memory_budget = false;
     uint32_t subgroup_size = 0;
 
-    void flush();
+    DeviceContext() { cache.setOwner(this); }
+    DeviceContext(const DeviceContext&) = delete;
+    DeviceContext& operator=(const DeviceContext&) = delete;
     ~DeviceContext();
+
+    size_t memoryBudget();
+    size_t memoryUsage();
+    void flush();
 };

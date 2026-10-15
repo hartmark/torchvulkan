@@ -43,6 +43,11 @@ public struct AtanhOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a
 public struct Deg2radOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_deg2rad(a); } }
 public struct Rad2degOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_rad2deg(a); } }
 public struct ErfOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_erf(a); } }
+public struct I0eOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_i0e(a); } }
+public struct I1eOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_i1e(a); } }
+public struct ErfcOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_erfc(a); } }
+public struct ErfcxOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_erfcx(a); } }
+public struct LogNdtrOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_log_ndtr(a); } }
 public struct ErfinvOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_erfinv(a); } }
 public struct SincOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_sinc(a); } }
 public struct EntrOp<T : ITorchVulkan> : IUnaryOp<T> { public static T eval(T a) { return T.ext_entr(a); } }

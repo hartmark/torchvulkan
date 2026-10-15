@@ -1,14 +1,7 @@
 #include "dispatch.h"
-#include "vulkan_context.h"
-#include <vector>
+#include "device_context.h"
+#include "shader.h"
 #include <unordered_map>
-#include <cassert>
-
-bool MemoryRange::overlaps(const MemoryRange& other) const
-{
-    return (byte_offset < other.byte_offset + other.byte_size) &&
-           (byte_offset + byte_size > other.byte_offset);
-}
 
 void DAGDispatcher::recordOp(VkCommandBuffer cmd, const OpInfo* op)
 {
@@ -53,83 +46,88 @@ void DAGDispatcher::recordBarrier(VkCommandBuffer cmd)
     device->device_table.vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-void DAGDispatcher::dispatch(const std::vector<OpInfo*> operations)
+void DAGDispatcher::recordHostBarrier(VkCommandBuffer cmd)
 {
-    read_dependency.clear();
-    write_dependency.clear();
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barrier.dstStageMask  = VK_PIPELINE_STAGE_2_HOST_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
 
-    std::unordered_map<uint64_t, OpInfo*> last_writer;
-    std::unordered_map<uint64_t, std::vector<OpInfo*>> readers_since_write;
-    std::unordered_map<OpInfo*, int> unresolved_deps;
+    VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dep.memoryBarrierCount = 1;
+    dep.pMemoryBarriers    = &barrier;
 
-    for (OpInfo* op : operations)
+    device->device_table.vkCmdPipelineBarrier2(cmd, &dep);
+}
+
+void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operations)
+{
+    // all elements in the vector depend on the key
+    std::unordered_map<const OpInfo*, std::vector<const OpInfo*>> dependents;
+    std::unordered_map<const OpInfo*, int> unresolved_deps;
+    std::unordered_map<uint64_t, const OpInfo*> last_writer;
+    std::unordered_map<uint64_t, std::vector<const OpInfo*>> readers_since_write;
+
+    for (const auto& owned : operations)
     {
-        for (MemoryRange* input : op->inputs)
+        const OpInfo* op = owned.get();
+        for (const MemoryRange& input : op->inputs)
         {
             // RAW: this read must wait for the previous write
-            auto it = last_writer.find(input->base_addr);
+            auto it = last_writer.find(input.base_addr);
             if (it != last_writer.end())
             {
-                read_dependency[it->second].push_back(op);
+                dependents[it->second].push_back(op);
                 unresolved_deps[op]++;
             }
-            readers_since_write[input->base_addr].push_back(op);
+            readers_since_write[input.base_addr].push_back(op);
         }
 
-        for (MemoryRange* output : op->outputs)
+        for (const MemoryRange& output : op->outputs)
         {
-            auto it_write = last_writer.find(output->base_addr);
-            auto it_read = readers_since_write.find(output->base_addr);
-
             // WAW: this write must wait for the previous writer
+            auto it_write = last_writer.find(output.base_addr);
             if (it_write != last_writer.end())
             {
-                OpInfo* write_dep = it_write->second;
-                write_dependency[write_dep].push_back(op);
+                dependents[it_write->second].push_back(op);
                 unresolved_deps[op]++;
             }
 
             // WAR: this write must wait for all readers since the last write
+            auto it_read = readers_since_write.find(output.base_addr);
             if (it_read != readers_since_write.end())
             {
-                std::vector<OpInfo*> read_dep = it_read->second;
-                for (OpInfo* dep : read_dep)
+                for (const OpInfo* reader : it_read->second)
                 {
-                    if (dep == op) continue;
-                    read_dependency[dep].push_back(op);
+                    if (reader == op) continue;
+                    dependents[reader].push_back(op);
                     unresolved_deps[op]++;
                 }
             }
 
-            last_writer[output->base_addr] = op;
-            readers_since_write.erase(output->base_addr);
+            last_writer[output.base_addr] = op;
+            readers_since_write.erase(output.base_addr);
         }
     }
 
-    VkCommandBuffer cmd = device->cache.allocateCommandBuffer(device->commandPool);
+    VkCommandBuffer cmd = device->cache.allocateCommandBuffer();
 
-    std::vector<OpInfo*> ready;
-    for (OpInfo* op : operations)
+    std::vector<const OpInfo*> ready;
+    for (const auto& op : operations)
     {
-        if (unresolved_deps[op] == 0) ready.push_back(op);
+        if (unresolved_deps[op.get()] == 0) ready.push_back(op.get());
     }
 
     while (!ready.empty())
     {
         // record the whole wave together so each op keeps its own pipeline / push constants / copy region
-        for (OpInfo* op : ready) recordOp(cmd, op);
+        for (const OpInfo* op : ready) recordOp(cmd, op);
 
-        std::vector<OpInfo*> next_wave;
-
-        for (OpInfo* op : ready)
+        std::vector<const OpInfo*> next_wave;
+        for (const OpInfo* op : ready)
         {
-            for (OpInfo* dependent : read_dependency[op])
-            {
-                unresolved_deps[dependent]--;
-                if (unresolved_deps[dependent] == 0) next_wave.push_back(dependent);
-            }
-            
-            for (OpInfo* dependent : write_dependency[op])
+            for (const OpInfo* dependent : dependents[op])
             {
                 unresolved_deps[dependent]--;
                 if (unresolved_deps[dependent] == 0) next_wave.push_back(dependent);
@@ -137,11 +135,11 @@ void DAGDispatcher::dispatch(const std::vector<OpInfo*> operations)
         }
 
         if (!next_wave.empty()) recordBarrier(cmd);
-
         ready = std::move(next_wave);
     }
 
-    device->device_table.vkEndCommandBuffer(cmd);
+    recordHostBarrier(cmd);
+    VK_CHECK(device->device_table.vkEndCommandBuffer(cmd));
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -149,19 +147,16 @@ void DAGDispatcher::dispatch(const std::vector<OpInfo*> operations)
     submitInfo.pCommandBuffers = &cmd;
 
     VkFence fence = device->cache.allocateFence();
-
-    std::unique_lock<std::mutex> lock(mutex_);
     VkResult submit_result = device->device_table.vkQueueSubmit(device->computeQueue, 1, &submitInfo, fence);
-    lock.unlock();
-
-    device->cache.deleteCommandBuffer(cmd);
-
-    TORCH_CHECK(submit_result == VK_SUCCESS, "torchvulkan [ERROR]: vkQueueSubmit failed with VkResult ", submit_result);
-
-    VkResult wait_result = device->device_table.vkWaitForFences(device->device, 1, &fence, VK_TRUE, UINT64_MAX);
-    if (wait_result != VK_SUCCESS) {
-        TORCH_CHECK(false, "torchvulkan [ERROR]: Wait for fence failed with VkResult ", wait_result);
+    if (submit_result != VK_SUCCESS) {
+        device->cache.deleteCommandBuffer(cmd);
+        device->cache.deleteFence(fence);
+        TORCH_CHECK(false, "torchvulkan [ERROR]: vkQueueSubmit failed with VkResult ", submit_result, ".");
     }
 
+    VkResult wait_result = device->device_table.vkWaitForFences(device->device, 1, &fence, VK_TRUE, UINT64_MAX);
+    TORCH_CHECK(wait_result == VK_SUCCESS, "torchvulkan [ERROR]: Wait for fence failed with VkResult ", wait_result, ".");
+
+    device->cache.deleteCommandBuffer(cmd);
     device->cache.deleteFence(fence);
 }

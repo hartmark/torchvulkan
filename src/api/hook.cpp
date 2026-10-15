@@ -11,7 +11,10 @@ struct VulkanHooksInterface : public at::PrivateUse1HooksInterface
     bool isBuilt() const override { return true; }
     bool isAvailable() const override { return VulkanContext::Instance().getDeviceCount() > 0; }
     bool hasPrimaryContext(c10::DeviceIndex device_index) const override { return device_index < VulkanContext::Instance().getDeviceCount(); }
-    at::Device getDeviceFromPtr(void* data) const override { return c10::Device(c10::DeviceType::PrivateUse1, 0); }
+    at::Device getDeviceFromPtr(void* data) const override {
+        if (data == nullptr) return c10::Device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice());
+        return c10::Device(c10::DeviceType::PrivateUse1, static_cast<VulkanBuffer*>(data)->owner()->index);
+    }
 
     c10::Allocator* getPinnedMemoryAllocator() const override {
         return c10::GetAllocator(c10::DeviceType::CPU);

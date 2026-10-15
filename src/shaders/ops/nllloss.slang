@@ -10,54 +10,56 @@ public struct NllLossPushConstants
     public uint64_t tensor_in;
     public uint64_t target;
     public uint64_t tensor_out;
+    public int64_t ignore_index;
     public uint N;
     public uint C;
-    public int ignore_index;
+}
+
+// a target outside [0, C) contributes nothing, instead of reading out of bounds
+bool targetInRange(int64_t t, uint C)
+{
+    return t >= 0 && t < int64_t(C);
 }
 
 public interface INllLossMode
 {
-    static void apply<T : ITorchVulkan>(
-        uint tid, T* tensor_in, int64_t* target, T* tensor_out, uint N, uint C, int ignore_index);
+    static void apply<T : ITorchVulkan>(uint tid, T* tensor_in, int64_t* target, T* tensor_out, NllLossPushConstants pcs);
 }
 
 public struct ForwardGatherOp : INllLossMode
 {
-    public static void apply<T : ITorchVulkan>(
-        uint tid, T* tensor_in, int64_t* target, T* tensor_out, uint N, uint C, int ignore_index)
+    public static void apply<T : ITorchVulkan>(uint tid, T* tensor_in, int64_t* target, T* tensor_out, NllLossPushConstants pcs)
     {
-        if (tid >= N) return;
+        if (tid >= pcs.N) return;
 
-        int t = int(target[tid]);
-        if (t == ignore_index) { tensor_out[tid] = T.ext_zero(); return; }
-        tensor_out[tid] = T.ext_neg(tensor_in[tid * C + uint(t)]);
+        int64_t t = target[tid];
+        if (t == pcs.ignore_index || !targetInRange(t, pcs.C)) { tensor_out[tid] = T.ext_zero(); return; }
+        tensor_out[tid] = T.ext_neg(tensor_in[uint64_t(tid) * pcs.C + uint64_t(t)]);
     }
 }
 
 public struct BackwardScatterOp : INllLossMode
 {
-    public static void apply<T : ITorchVulkan>(
-        uint tid, T* tensor_in, int64_t* target, T* tensor_out, uint N, uint C, int ignore_index)
+    public static void apply<T : ITorchVulkan>(uint tid, T* tensor_in, int64_t* target, T* tensor_out, NllLossPushConstants pcs)
     {
-        if (tid >= N * C) return;
+        if (tid >= pcs.N * pcs.C) return;
 
-        uint i = tid / C;
-        uint c = tid % C;
-        int t = int(target[i]);
-        tensor_out[tid] = (t != ignore_index && int(c) == t) ? T.ext_neg(tensor_in[i]) : T.ext_zero();
+        uint i = tid / pcs.C;
+        uint c = tid % pcs.C;
+        int64_t t = target[i];
+        tensor_out[tid] = (t != pcs.ignore_index && int64_t(c) == t) ? T.ext_neg(tensor_in[i]) : T.ext_zero();
     }
 }
 
 public struct WeightGatherOp : INllLossMode
 {
-    public static void apply<T : ITorchVulkan>(
-        uint tid, T* tensor_in, int64_t* target, T* tensor_out, uint N, uint C, int ignore_index)
+    public static void apply<T : ITorchVulkan>(uint tid, T* tensor_in, int64_t* target, T* tensor_out, NllLossPushConstants pcs)
     {
-        if (tid >= N) return;
+        if (tid >= pcs.N) return;
 
-        int t = int(target[tid]);
-        if (t == ignore_index) { tensor_out[tid] = T.ext_zero(); return; }
-        tensor_out[tid] = tensor_in[uint(t)];
+        int64_t t = target[tid];
+        if (t == pcs.ignore_index || !targetInRange(t, pcs.C)) { tensor_out[tid] = T.ext_zero(); return; }
+        tensor_out[tid] = tensor_in[uint64_t(t)];
     }
 }
 
@@ -69,9 +71,9 @@ public void dispatchNllLoss<T : ITorchVulkan>(uint3 gi, NllLossPushConstants pcs
 
     switch (MODE)
     {
-    case 0: ForwardGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs.N, pcs.C, pcs.ignore_index); break;
-    case 1: BackwardScatterOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs.N, pcs.C, pcs.ignore_index); break;
-    case 2: WeightGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs.N, pcs.C, pcs.ignore_index); break;
+    case 0: ForwardGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
+    case 1: BackwardScatterOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
+    case 2: WeightGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
     default: break;
     }
 }

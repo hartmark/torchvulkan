@@ -1,3 +1,4 @@
+import atexit
 import sys
 
 try:
@@ -5,7 +6,9 @@ try:
 except ImportError as e:
     raise ImportError("PyTorch is required to use torchvulkan. Please install PyTorch and try again.") from e
 
-if torch.__version__ < "2.10.0":
+from torch.torch_version import TorchVersion
+
+if TorchVersion(torch.__version__) < TorchVersion("2.10.0"):
     raise RuntimeError(f"torchvulkan [ERROR]: torchvulkan requires PyTorch 2.10.0 or higher, but found {torch.__version__}.")
 
 try:
@@ -28,8 +31,8 @@ def device(dev):
     index = dev if isinstance(dev, int) or dev is None else torch.device(dev).index
     return torch.accelerator.device_index(index)
 
-def synchronize() -> None:
-    _C.synchronize()
+def synchronize(device=None) -> None:
+    _C.synchronize(_device_index(device))
 
 def empty_cache() -> None:
     _C.empty_cache()
@@ -79,6 +82,8 @@ def set_rng_state_all(new_states) -> None:
 
 def _is_in_bad_fork() -> bool:
     return _C._is_in_bad_fork()
+
+atexit.register(_C._save_pipeline_caches)
 
 torch.utils.rename_privateuse1_backend('vulkan')
 torch._register_device_module('vulkan', sys.modules[__name__])

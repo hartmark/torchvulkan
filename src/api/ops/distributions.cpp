@@ -23,7 +23,8 @@ at::Tensor dispatch_distribution_shader(
     const std::optional<at::Generator>& generator)
 {
     at::ScalarType dtype = input0.scalar_type();
-    if (!is_dtype_supported(dtype)) {
+
+    if (!is_dtype_supported(input0, dtype)) {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: Vulkan device does not support ", dtype, ". Sampling in Float instead.");
         dtype = at::kFloat;
     }
@@ -36,8 +37,8 @@ at::Tensor dispatch_distribution_shader(
     uint64_t numel = out.numel();
     if (numel == 0) return out;
 
-    DeviceContext* device = VulkanContext::Instance().CurrentDeviceContext();
-    uint32_t workgroupSizeX = get_dtype_workgroup_size(dtype, 1);
+    DeviceContext* device = get_device_context(input0);
+    uint32_t workgroupSizeX = get_dtype_workgroup_size(dtype, 1, device);
 
     SpecializationBuilder spd{};
     spd.push(static_cast<uint32_t>(op))
@@ -54,7 +55,7 @@ at::Tensor dispatch_distribution_shader(
         .push(seed)
         .push(offset)
         .push(random_real_bits(tiny, random_real_dtype(dtype)));
-    PushConstants pushConstants = { const_cast<void*>(pcs.data()), pcs.size() };
+    PushConstants pushConstants = pcs.build();
 
     uint32_t groupX = static_cast<uint32_t>((numel + workgroupSizeX - 1) / workgroupSizeX);
 

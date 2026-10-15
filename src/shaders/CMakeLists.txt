@@ -5,12 +5,14 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${SHADER_GENERATOR}"
     "${CMAKE_SOURCE_DIR}/scripts/config.py")
 
-set(SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/build/shaders")
-file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
+set(SHADER_OUT_DIR "${CMAKE_BINARY_DIR}/shaders")
+file(MAKE_DIRECTORY ${SHADER_OUT_DIR} ${TORCHVULKAN_GENERATED_DIR})
 
 message(STATUS "Running shader generator: ${SHADER_GENERATOR}")
 execute_process(
     COMMAND ${Python3_EXECUTABLE} ${SHADER_GENERATOR}
+        --out ${SHADER_OUT_DIR}
+        --kernels-header ${TORCHVULKAN_GENERATED_DIR}/shader_kernels.h
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     RESULT_VARIABLE SHADER_GENERATOR_RESULT
 )
@@ -45,14 +47,16 @@ endfunction()
 
 include("${SHADER_OUT_DIR}/variants.cmake")
 
-set(SHADER_REGISTRY_H "${CMAKE_SOURCE_DIR}/src/shaders/shader_registry.h")
-
 add_custom_command(
-    OUTPUT ${SHADER_REGISTRY_H}
+    OUTPUT ${TORCHVULKAN_SHADER_REGISTRY_CPP} ${TORCHVULKAN_GENERATED_DIR}/shader_registry.h
     COMMAND ${Python3_EXECUTABLE} ${SHADER_PACKER}
+        --build ${SHADER_OUT_DIR}
+        --variants ${SHADER_OUT_DIR}/variants.json
+        --out ${TORCHVULKAN_SHADER_REGISTRY_CPP}
+        --header ${TORCHVULKAN_GENERATED_DIR}/shader_registry.h
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${SPV_FILES} ${SHADER_PACKER} "${SHADER_OUT_DIR}/variants.json"
-    COMMENT "Packing shaders into ${SHADER_REGISTRY_H}"
+    COMMENT "Packing shaders into ${TORCHVULKAN_SHADER_REGISTRY_CPP}"
 )
 
-add_custom_target(compile_shaders ALL DEPENDS ${SHADER_REGISTRY_H})
+add_custom_target(compile_shaders ALL DEPENDS ${TORCHVULKAN_SHADER_REGISTRY_CPP})

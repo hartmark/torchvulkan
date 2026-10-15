@@ -1,6 +1,8 @@
 #include <torch/extension.h>
 #include <c10/core/MemoryFormat.h>
 #include <ATen/native/Resize.h>
+#include <ATen/EmptyTensor.h>
+#include <c10/core/DeviceGuard.h>
 #include "vulkan/memory.h"
 #include "vulkan/allocator.h"
 #include "vulkan/vulkan_context.h"
@@ -13,10 +15,14 @@ at::Tensor empty_memory_format_vulkan(
     c10::SymIntArrayRef size,
     c10::optional<at::ScalarType> dtype,
     c10::optional<at::Layout> layout,
-    c10::optional<at::Device> /* device */,
+    c10::optional<at::Device> device,
     c10::optional<bool> /* pin_memory */,
     c10::optional<at::MemoryFormat> memory_format) 
 {
+    // the allocator places memory on the current device, so make that the requested one
+    c10::OptionalDeviceGuard guard;
+    if (device.has_value() && device->has_index()) guard.reset_device(*device);
+
     at::ScalarType dtype_ = dtype.value_or(at::kFloat);
     at::Layout layout_ = layout.value_or(at::kStrided);
     at::MemoryFormat memory_format_ = memory_format.value_or(at::MemoryFormat::Contiguous);
@@ -29,8 +35,8 @@ at::Tensor empty_memory_format_vulkan(
         concrete_sizes.push_back(s.guard_int(__FILE__, __LINE__));
     }
     
-    int64_t numel = c10::multiply_integers(concrete_sizes);
-    size_t nbytes = numel * c10::elementSize(dtype_);
+    at::detail::check_size_nonnegative(concrete_sizes);
+    size_t nbytes = at::detail::computeStorageNbytesContiguous(concrete_sizes, c10::elementSize(dtype_));
 
     std::vector<int64_t> strides = compute_strides(concrete_sizes, memory_format_);
 
@@ -57,9 +63,12 @@ at::Tensor empty_strided_vulkan(
     c10::SymIntArrayRef stride,
     c10::optional<at::ScalarType> dtype,
     c10::optional<at::Layout> /* layout */, // assumed to be strided, so ignored
-    c10::optional<at::Device> /* device */,
+    c10::optional<at::Device> device,
     c10::optional<bool> /* pin_memory */) 
 {
+    c10::OptionalDeviceGuard guard;
+    if (device.has_value() && device->has_index()) guard.reset_device(*device);
+
     at::ScalarType dtype_ = dtype.value_or(at::kFloat);
     
     std::vector<int64_t> concrete_sizes;
@@ -76,6 +85,7 @@ at::Tensor empty_strided_vulkan(
         concrete_strides.push_back(val);
     }
     
+    at::detail::check_size_nonnegative(concrete_sizes);
     size_t nbytes = at::detail::computeStorageNbytes(
         concrete_sizes, 
         concrete_strides, 
@@ -106,6 +116,9 @@ void torchvulkan::resize_bytes_vulkan(c10::StorageImpl* storage, size_t nbytes)
 {
     TORCH_CHECK(storage->resizable(), "torchvulkan [ERROR]: Trying to resize storage that is not resizable.");
 
+    c10::OptionalDeviceGuard guard;
+    if (storage->data() != nullptr) guard.reset_device(storage->data_ptr().device());
+
     at::DataPtr new_data;
     if (nbytes != 0) new_data = storage->allocator()->allocate(nbytes);
 
@@ -125,9 +138,8 @@ const at::Tensor& torchvulkan::resize_vulkan(
 {
     at::TensorImpl* impl = self.unsafeGetTensorImpl();
 
-    int64_t numel = 1;
-    for (auto s : size) numel *= s;
-    size_t new_bytes = (impl->storage_offset() + numel) * self.itemsize();
+    at::detail::check_size_nonnegative(size);
+    size_t new_bytes = at::detail::computeStorageNbytesContiguous(size, self.itemsize(), impl->storage_offset());
 
     if (impl->storage().nbytes() < new_bytes) {
         torchvulkan::resize_bytes_vulkan(impl->storage().unsafeGetStorageImpl(), new_bytes);

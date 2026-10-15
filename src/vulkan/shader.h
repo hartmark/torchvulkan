@@ -2,12 +2,13 @@
 #include <volk.h>
 #include <ATen/ATen.h>
 
-#include "shaders/shader_kernels.h"
+#include "generated/shader_kernels.h"
 #include "builders.h"
 #include "dispatch.h"
 
 #include <array>
-#include <functional>
+#include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -15,7 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
-class DeviceContext;
+struct DeviceContext;
 class VulkanBuffer;
 
 struct ShaderKey {
@@ -38,7 +39,6 @@ struct MemoryRange {
     uint64_t base_addr;
     size_t byte_offset;
     size_t byte_size;
-    bool overlaps(const MemoryRange& other) const;
 };
 
 enum OpType {
@@ -47,39 +47,34 @@ enum OpType {
 };
 
 struct OpInfo {
-    OpType type;
+    OpType type = OpType::COMPUTE;
 
     // compute
-    VkPipeline pipeline;
-    VkPipelineLayout pipelineLayout;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     std::array<uint8_t, MAX_PUSH_CONSTANT_BYTES> pushConstantData{};
     size_t pushConstantSize = 0;
-    uint32_t groupX, groupY, groupZ;
+    uint32_t groupX = 1, groupY = 1, groupZ = 1;
 
     // copy
     VkBuffer srcBuffer = VK_NULL_HANDLE;
     VkBuffer dstBuffer = VK_NULL_HANDLE;
     VkBufferCopy region{};
 
-    std::vector<MemoryRange*> inputs;
-    std::vector<MemoryRange*> outputs;
+    std::vector<MemoryRange> inputs;
+    std::vector<MemoryRange> outputs;
 };
 
 class VulkanShaderManager
 {
 public:
-    VulkanShaderManager(
-        DeviceContext* device
-    );
-
-    uint64_t registerMetadata(
-        const Metadata& metadata
-    );
+    explicit VulkanShaderManager(DeviceContext* device);
+    ~VulkanShaderManager();
 
     void dispatchShader(
         ShaderKey key,
-        SpecializationArgs specConstants,
-        PushConstants pushConstants,
+        const SpecializationArgs& specConstants,
+        const PushConstants& pushConstants,
         at::TensorList readTensors,
         at::TensorList writeTensors,
         uint32_t groupX, uint32_t groupY, uint32_t groupZ
@@ -88,43 +83,51 @@ public:
     void dispatchCopy(
         VulkanBuffer* src, uint64_t srcOffset,
         VulkanBuffer* dst, uint64_t dstOffset,
-        size_t count
+        size_t count,
+        VulkanBuffer* release_after = nullptr
     );
 
     void flush();
-
-    ~VulkanShaderManager();
+    void flushAndReleaseBuffers();
+    void savePipelineCache();
 
 private:
-    std::mutex mutex_;
     DeviceContext* device = nullptr;
-    std::vector<OpInfo*> operations;
-    DAGDispatcher* dispatcher;
+    DAGDispatcher dispatcher;
+
+    std::mutex record_mutex_;
+    std::vector<std::unique_ptr<OpInfo>> operations;
+    std::vector<VulkanBuffer*> release_after_flush;
 
     static const uint64_t METADATA_BUFFER_SIZE = 1024 * 1024; // 1MB
-    VulkanBuffer* metadata_buffer;
-    void* metadata_base_ptr;
-    uint64_t metadata_offset;
+    std::unique_ptr<VulkanBuffer> metadata_buffer;
+    uint64_t metadata_offset = 0;
 
     static constexpr size_t MIN_PENDING_BYTES_FLUSH_THRESHOLD = 256ull << 20;
     static constexpr size_t MAX_PENDING_OPS = 512;
     std::unordered_set<uint64_t> pending_buffers;
     size_t pending_bytes = 0;
 
-    size_t flushThreshold() const;
-    void trackPending(const MemoryRange* range);
+    void submit();
+    uint64_t registerMetadata(const Metadata& metadata);
+    void trackPending(const MemoryRange& range);
     void flushIfPending();
 
-    void clearCache();
-    uint32_t resolveBinary(ShaderKey key) const;
-    ShaderSubmitInfo* allocateShader(uint32_t binary, const SpecializationArgs spec);
-    VkShaderModule allocateShaderModule(uint32_t binary);
-    VkPipelineLayout allocatePipelineLayout();
-    ShaderSubmitInfo* allocatePipeline(uint32_t binary, const SpecializationArgs spec);
-    void displayPipelineStatistics(VkPipeline pipeline);
-
+    std::mutex cache_mutex_;
     std::vector<int32_t> binaryIndex;
-    std::vector<std::unordered_map<std::string, ShaderSubmitInfo*, SpecializationKeyHash, std::equal_to<>>> shaderCache;
+    std::vector<std::unordered_map<std::string, ShaderSubmitInfo, SpecializationKeyHash, std::equal_to<>>> shaderCache;
     std::vector<VkShaderModule> shaderModuleCache;
-    std::unordered_map<uint64_t, VkPipelineLayout> pipelineLayoutCache;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+    bool pipelineCacheDirty = false;
+
+    uint32_t resolveBinary(ShaderKey key) const;
+    ShaderSubmitInfo allocateShader(uint32_t binary, const SpecializationArgs& spec);
+    VkShaderModule allocateShaderModule(uint32_t binary);
+    
+    VkPipeline createPipeline(uint32_t binary, const SpecializationArgs& spec);
+    void displayPipelineStatistics(VkPipeline pipeline);
+    void createPipelineCache();
+    std::string pipelineCachePath() const;
+    void clearCache();
 };

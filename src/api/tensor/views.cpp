@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <ATen/InferSize.h>
+#include <ATen/EmptyTensor.h>
 #include <ATen/WrapDimUtils.h>
 #include <ATen/ops/unfold_native.h>
 #include <c10/core/MemoryFormat.h>
@@ -31,6 +32,19 @@ at::Tensor as_strided_vulkan(
     int64_t offset = storage_offset.has_value() 
         ? storage_offset.value().guard_int(__FILE__, __LINE__) 
         : self.storage_offset();
+
+    // kernels read through raw device addresses, so a view reaching past its storage would read other memory
+    TORCH_CHECK(concrete_sizes.size() == concrete_strides.size(), "mismatch in length of strides and shape");
+    for (int64_t stride : concrete_strides) {
+        TORCH_CHECK(stride >= 0, "as_strided: Negative strides are not supported at the moment, got strides: ", concrete_strides);
+    }
+    TORCH_CHECK(offset >= 0, "Tensor: invalid storage offset ", offset);
+    at::detail::check_size_nonnegative(concrete_sizes);
+    size_t needed = at::detail::computeStorageNbytes(concrete_sizes, concrete_strides, self.itemsize(), offset);
+    TORCH_CHECK(needed <= self.storage().nbytes(), "setStorage: sizes ", concrete_sizes, ", strides ", concrete_strides,
+        ", storage offset ", offset, ", and itemsize ", self.itemsize(), " requiring a storage size of ", needed,
+        " are out of bounds for storage of size ", self.storage().nbytes()
+    );
 
     at::Tensor result = at::detail::make_tensor<at::TensorImpl>(
         c10::TensorImpl::VIEW,
@@ -132,15 +146,6 @@ at::Tensor unfold_vulkan(const at::Tensor& self, int64_t dimension, int64_t size
     return at::native::unfold(self, dimension, size, step);
 }
 
-at::Tensor contiguous_vulkan(const at::Tensor& self, at::MemoryFormat memory_format)
-{
-    if (self.is_contiguous(memory_format)) return self;
-    at::Tensor result = at::empty_like(self, self.options().memory_format(memory_format));
-
-    // call directly rather than through dispatcher to avoid weird fallbacks that trigger infinite recursive loops
-    return torchvulkan::copy_vulkan(self, result, false); 
-}
-
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -151,5 +156,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("transpose.int", &transpose_int_vulkan);
     m.impl("permute", &permute_vulkan);
     m.impl("unfold", &unfold_vulkan);
-    m.impl("contiguous", &contiguous_vulkan);
 }

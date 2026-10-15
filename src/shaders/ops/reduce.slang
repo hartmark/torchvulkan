@@ -21,6 +21,8 @@ public struct ReducePushConstants
     public uint64_t numel_out;
     public uint reduce_stride;
     public uint reduce_size;
+    public uint split;
+    public uint chunk;
 }
 
 public interface IReduceOp<T>
@@ -40,10 +42,16 @@ public void baseReduceKernel<T : ITorchVulkan, Op : IReduceOp<T>>(
     uint64_t address_metadata,
     uint64_t numel_out,
     uint reduce_stride,
-    uint reduce_size)
+    uint reduce_size,
+    uint split,
+    uint chunk)
 {
     uint idx = gi.x;
-    if (idx >= numel_out) return;
+    if (uint64_t(idx) >= numel_out * split) return;
+
+    uint out_idx = idx / split;
+    uint r_begin = (idx % split) * chunk;
+    uint r_end = min(reduce_size, r_begin + chunk);
 
     T* tensor_in = (T*)address_in;
     T* tensor_out = (T*)address_out;
@@ -53,11 +61,11 @@ public void baseReduceKernel<T : ITorchVulkan, Op : IReduceOp<T>>(
 
     uint idx_in = 0;
 
-    var walker = IndexWalker(md.sizes, NDIM, idx);
+    var walker = IndexWalker(md.sizes, NDIM, out_idx);
     for (uint i = 0; i < NDIM; i++) idx_in += walker.next(i) * strides_in[i];
 
-    T acc = tensor_in[idx_in];
-    for (uint r = 1; r < reduce_size; r++) acc = Op.combine(acc, tensor_in[idx_in + r * reduce_stride]);
+    T acc = tensor_in[idx_in + r_begin * reduce_stride];
+    for (uint r = r_begin + 1; r < r_end; r++) acc = Op.combine(acc, tensor_in[idx_in + r * reduce_stride]);
 
     tensor_out[idx] = acc;
 }
@@ -66,10 +74,10 @@ public void dispatchReduce<T : ITorchVulkan>(uint3 gi, ReducePushConstants pcs)
 {
     switch (OP_TYPE)
     {
-    case 0: baseReduceKernel<T, SumReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
-    case 1: baseReduceKernel<T, AmaxReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
-    case 2: baseReduceKernel<T, AminReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
-    case 3: baseReduceKernel<T, ProdReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size); break;
+    case 0: baseReduceKernel<T, SumReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
+    case 1: baseReduceKernel<T, AmaxReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
+    case 2: baseReduceKernel<T, AminReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
+    case 3: baseReduceKernel<T, ProdReduceOp<T>>(gi, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.numel_out, pcs.reduce_stride, pcs.reduce_size, pcs.split, pcs.chunk); break;
     default: break;
     }
 }

@@ -47,11 +47,6 @@ at::Tensor reduce_loss(const at::Tensor& t, int64_t reduction)
     return t;
 }
 
-at::Tensor gt_mask(const at::Tensor& v)
-{
-    return at::clamp(at::sign(v), 0, 1);
-}
-
 at::Tensor dot_vulkan(const at::Tensor& self, const at::Tensor& other)
 {
     at::ScalarType odt = self.scalar_type();
@@ -70,7 +65,7 @@ at::Tensor& addmv_out_vulkan(const at::Tensor& self, const at::Tensor& mat, cons
 
     at::Tensor m = low ? mat.to(at::kFloat) : mat;
     at::Tensor v = low ? vec.to(at::kFloat) : vec;
-    at::Tensor res = at::mul(at::matmul(m, v), a);
+    at::Tensor res = at::mul(at::mm(m, v.unsqueeze(1)).squeeze(1), a);
     if (b.toDouble() != 0.0) res = at::add(res, at::mul(low ? self.to(at::kFloat) : self, b));
     return fill_out(out, res.to(odt));
 }
@@ -94,7 +89,8 @@ at::Tensor& renorm_out_vulkan(const at::Tensor& self, const at::Scalar& p, int64
     for (int64_t i = 0; i < self.dim(); i++) if (i != d) rdims.push_back(i);
 
     at::Tensor norms = p_norm(self, p.toDouble(), rdims, /*keepdim=*/true);
-    at::Tensor factor = at::clamp_max(at::mul(at::reciprocal(at::add(norms, 1e-7)), maxnorm.toDouble()), 1.0);
+    at::Tensor scaled = at::mul(at::reciprocal(at::add(norms, 1e-7)), maxnorm.toDouble());
+    at::Tensor factor = at::where(at::gt(norms, maxnorm), scaled, at::ones_like(scaled));
     return fill_out(out, at::mul(self, factor));
 }
 
@@ -106,16 +102,12 @@ at::Tensor& softshrink_out_vulkan(const at::Tensor& self, const at::Scalar& lamb
 
 at::Tensor& hardshrink_out_vulkan(const at::Tensor& self, const at::Scalar& lambd, at::Tensor& out)
 {
-    at::Tensor mask = gt_mask(at::sub(at::abs(self), lambd));
-    return fill_out(out, at::mul(self, mask));
+    return fill_out(out, at::where(at::le(at::abs(self), lambd), at::zeros_like(self), self));
 }
 
 at::Tensor& threshold_out_vulkan(const at::Tensor& self, const at::Scalar& threshold, const at::Scalar& value, at::Tensor& out)
 {
-    at::Tensor s = at::isIntegralType(self.scalar_type(), /*includeBool=*/true) ? self.to(at::kFloat) : self;
-    at::Tensor mask = gt_mask(at::sub(s, threshold));
-    at::Tensor res = at::add(at::mul(mask, s), at::mul(at::rsub(mask, 1), value));
-    return fill_out(out, res);
+    return fill_out(out, at::where(at::le(self, threshold), at::scalar_tensor(value, self.options()), self));
 }
 
 at::Tensor& glu_out_vulkan(const at::Tensor& self, int64_t dim, at::Tensor& out)
@@ -135,7 +127,7 @@ at::Tensor prelu_vulkan(const at::Tensor& self, const at::Tensor& weight)
         vshape[1] = weight.numel();
         w = weight.view(vshape);
     }
-    return at::add(at::clamp_min(self, 0), at::mul(w, at::clamp_max(self, 0)));
+    return at::where(at::gt(self, 0), self, at::mul(w, self));
 }
 
 std::tuple<at::Tensor, at::Tensor> log_sigmoid_forward_vulkan(const at::Tensor& self)
@@ -151,9 +143,7 @@ at::Tensor huber_loss_vulkan(const at::Tensor& self, const at::Tensor& target, i
     at::Tensor absd = at::abs(d);
     at::Tensor quad = at::mul(at::mul(d, d), 0.5);
     at::Tensor lin = at::mul(at::sub(absd, 0.5 * delta), delta);
-    at::Tensor mask = gt_mask(at::sub(absd, delta));
-    at::Tensor loss = at::add(at::mul(at::rsub(mask, 1), quad), at::mul(mask, lin));
-    return reduce_loss(loss, reduction);
+    return reduce_loss(at::where(at::lt(absd, delta), quad, lin), reduction);
 }
 
 at::Tensor& smooth_l1_loss_out_vulkan(const at::Tensor& self, const at::Tensor& target, int64_t reduction, double beta, at::Tensor& out)
@@ -166,8 +156,7 @@ at::Tensor& smooth_l1_loss_out_vulkan(const at::Tensor& self, const at::Tensor& 
     } else {
         at::Tensor quad = at::div(at::mul(at::mul(d, d), 0.5), beta);
         at::Tensor lin = at::sub(absd, 0.5 * beta);
-        at::Tensor mask = gt_mask(at::sub(absd, beta));
-        loss = at::add(at::mul(at::rsub(mask, 1), quad), at::mul(mask, lin));
+        loss = at::where(at::lt(absd, beta), quad, lin);
     }
     return fill_out(out, reduce_loss(loss, reduction));
 }
@@ -229,48 +218,17 @@ at::Tensor& gelu_out_vulkan(const at::Tensor& self, c10::string_view approximate
     return fill_out(out, r);
 }
 
-at::Tensor& erfc_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::rsub(at::erf(self), 1));
-}
-
-at::Tensor& log_ndtr_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::log(at::special_ndtr(self)));
-}
-
-at::Tensor& i0e_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    at::Tensor x = self.is_floating_point() ? self : self.to(at::kFloat);
-    return fill_out(out, at::mul(at::exp(at::neg(at::abs(x))), at::i0(x)));
-}
-
-at::Tensor& i1e_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    at::Tensor x = self.is_floating_point() ? self : self.to(at::kFloat);
-    return fill_out(out, at::mul(at::exp(at::neg(at::abs(x))), at::special_i1(x)));
-}
-
-at::Tensor& erfcx_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::mul(at::exp(at::mul(self, self)), at::erfc(self)));
-}
-
-at::Tensor& lgamma_out_vulkan(const at::Tensor& self, at::Tensor& out)
-{
-    return fill_out(out, at::lgamma(self));
-}
-
 at::Tensor& masked_fill_scalar_vulkan_(at::Tensor& self, const at::Tensor& mask, const at::Scalar& value)
 {
-    self.copy_(at::where(mask, at::scalar_tensor(value, self.options()), self));
-    return self;
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "masked_fill_ only supports boolean masks, but got mask with dtype ", mask.scalar_type());
+    return copy_inplace_result(self, at::where(mask, at::scalar_tensor(value, self.options()), self));
 }
 
 at::Tensor& masked_fill_tensor_vulkan_(at::Tensor& self, const at::Tensor& mask, const at::Tensor& value)
 {
-    self.copy_(at::where(mask, value, self));
-    return self;
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "masked_fill_ only supports boolean masks, but got mask with dtype ", mask.scalar_type());
+    TORCH_CHECK(value.dim() == 0, "masked_fill_ only supports a 0-dimensional value tensor, but got tensor with ", value.dim(), " dimension(s).");
+    return copy_inplace_result(self, at::where(mask, value.to(self.options()), self));
 }
 
 at::Tensor& nan_to_num_out_vulkan(const at::Tensor& self, c10::optional<double> nan, c10::optional<double> posinf, c10::optional<double> neginf, at::Tensor& out)
@@ -379,27 +337,12 @@ at::Tensor softplus_vulkan(const at::Tensor& self, const at::Scalar& beta, const
 {
     at::Tensor bx = at::mul(self, beta);
     at::Tensor sp = at::div(at::add(at::clamp_min(bx, 0), at::log1p(at::exp(at::neg(at::abs(bx))))), beta);
-    at::Tensor mask = at::clamp(at::sign(at::sub(bx, threshold)), 0, 1);
-    return at::add(at::mul(mask, self), at::mul(at::rsub(mask, 1), sp));
+    return at::where(at::gt(bx, threshold), self, sp);
 }
 
 at::Tensor mish_vulkan(const at::Tensor& self)
 {
     return at::mul(self, at::tanh(softplus_vulkan(self, 1, 20)));
-}
-
-at::Tensor tanhshrink_vulkan(const at::Tensor& self)
-{
-    return at::sub(self, at::tanh(self));
-}
-
-at::Tensor square_vulkan(const at::Tensor& self)
-{
-    if (self.scalar_type() == at::kBool) {
-        at::Tensor t = self.to(at::kLong);
-        return at::mul(t, t);
-    }
-    return at::mul(self, self);
 }
 
 at::Tensor logit_vulkan(const at::Tensor& self, c10::optional<double> eps)
@@ -487,11 +430,19 @@ at::Tensor logsumexp_vulkan(
 }
 
 std::tuple<at::Tensor, at::Tensor> compute_var_mean(
-    const at::Tensor& self,
+    const at::Tensor& self_in,
     at::OptionalIntArrayRef dim,
     double correction,
     bool keepdim)
 {
+    TORCH_CHECK(at::isFloatingType(self_in.scalar_type()) || at::isComplexType(self_in.scalar_type()),
+        "std and var only support floating point and complex dtypes"
+    );
+
+    at::ScalarType odt = self_in.scalar_type();
+    bool low = is_low_prec(odt);
+    at::Tensor self = low ? self_in.to(at::kFloat) : self_in;
+
     at::Tensor mean_keep = at::mean(self, dim, /*keepdim=*/true);
     at::Tensor diff = at::sub(self, mean_keep);
     at::Tensor ssum = at::sum(at::mul(diff, diff), dim, keepdim);
@@ -508,6 +459,7 @@ std::tuple<at::Tensor, at::Tensor> compute_var_mean(
         ? at::div(ssum, denom)
         : at::full_like(ssum, std::numeric_limits<double>::quiet_NaN());
     at::Tensor mean = keepdim ? mean_keep : at::mean(self, dim, /*keepdim=*/false);
+    if (low) return std::make_tuple(var.to(odt), mean.to(odt));
     return std::make_tuple(var, mean);
 }
 
@@ -613,7 +565,7 @@ at::Tensor tril_indices_vulkan(
 ) {
     at::TensorOptions cpu_opts = at::TensorOptions().dtype(dtype.value_or(at::kLong)).layout(layout.value_or(at::kStrided)).device(at::kCPU);
     at::Tensor cpu = at::tril_indices(row, col, offset, cpu_opts);
-    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, 0)));
+    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())));
 }
 
 at::Tensor triu_indices_vulkan(
@@ -627,7 +579,7 @@ at::Tensor triu_indices_vulkan(
 ) {
     at::TensorOptions cpu_opts = at::TensorOptions().dtype(dtype.value_or(at::kLong)).layout(layout.value_or(at::kStrided)).device(at::kCPU);
     at::Tensor cpu = at::triu_indices(row, col, offset, cpu_opts);
-    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, 0)));
+    return cpu.to(device.value_or(at::Device(at::DeviceType::PrivateUse1, VulkanContext::CurrentDevice())));
 }
 
 at::Tensor gelu_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, c10::string_view approximate)
@@ -666,52 +618,6 @@ int64_t fused_sdp_choice_vulkan(
     return static_cast<int64_t>(at::SDPBackend::math);
 }
 
-at::Tensor embedding_vulkan(
-    const at::Tensor& weight,
-    const at::Tensor& indices,
-    c10::SymInt /* padding_idx */,
-    bool scale_grad_by_freq,
-    bool sparse)
-{
-    TORCH_CHECK(!sparse, "torchvulkan [NOT IMPLEMENTED]: sparse embedding gradients are not supported.");
-    TORCH_CHECK(!scale_grad_by_freq, "torchvulkan [NOT IMPLEMENTED]: scale_grad_by_freq is not supported.");
-
-    int64_t num_embeddings = weight.size(0);
-    at::Tensor flat_idx = indices.reshape({-1});
-    at::Tensor vocab = at::arange(num_embeddings, flat_idx.options());
-    at::Tensor one_hot = at::eq(flat_idx.unsqueeze(1), vocab).to(weight.scalar_type());
-    at::Tensor out = at::matmul(one_hot, weight);
-
-    std::vector<int64_t> out_shape(indices.sizes().begin(), indices.sizes().end());
-    out_shape.push_back(weight.size(1));
-    return out.reshape(out_shape);
-}
-
-at::Tensor embedding_dense_backward_vulkan(
-    const at::Tensor& grad_output,
-    const at::Tensor& indices,
-    c10::SymInt num_weights,
-    c10::SymInt padding_idx,
-    bool scale_grad_by_freq)
-{
-    TORCH_CHECK(!scale_grad_by_freq, "torchvulkan [NOT IMPLEMENTED]: scale_grad_by_freq is not supported.");
-
-    int64_t num_weights_ = num_weights.guard_int(__FILE__, __LINE__);
-    int64_t padding_idx_ = padding_idx.guard_int(__FILE__, __LINE__);
-
-    at::Tensor flat_idx = indices.reshape({-1});
-    at::Tensor flat_grad = grad_output.reshape({flat_idx.size(0), grad_output.size(-1)});
-    at::Tensor vocab = at::arange(num_weights_, flat_idx.options());
-    at::Tensor one_hot = at::eq(flat_idx.unsqueeze(1), vocab);
-
-    if (padding_idx_ >= 0) {
-        at::Tensor keep = at::ne(flat_idx, padding_idx_).unsqueeze(1);
-        one_hot = at::logical_and(one_hot, keep);
-    }
-
-    return at::matmul(one_hot.to(grad_output.scalar_type()).transpose(0, 1), flat_grad);
-}
-
 std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     const at::Tensor& input,
     c10::SymIntArrayRef normalized_shape,
@@ -728,8 +634,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     bool low = is_low_prec(odt);
     at::Tensor x = low ? input.to(at::kFloat) : input;
 
-    at::Tensor mean = at::mean(x, reduce_dims, /*keepdim=*/true);
-    at::Tensor var = at::var(x, reduce_dims, /*unbiased=*/false, /*keepdim=*/true);
+    auto [var, mean] = compute_var_mean(x, reduce_dims, /*correction=*/0.0, /*keepdim=*/true);
     at::Tensor rstd = at::rsqrt(at::add(var, eps));
     at::Tensor xhat = at::mul(at::sub(x, mean), rstd);
 
@@ -737,6 +642,46 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_vulkan(
     if (weight.has_value()) y = at::mul(y, low ? weight->to(at::kFloat) : *weight);
     if (bias.has_value()) y = at::add(y, low ? bias->to(at::kFloat) : *bias);
 
+    if (low) {
+        y = y.to(odt);
+        mean = mean.to(odt);
+        rstd = rstd.to(odt);
+    }
+    return std::make_tuple(y, mean, rstd);
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> native_group_norm_vulkan(
+    const at::Tensor& input,
+    const c10::optional<at::Tensor>& weight,
+    const c10::optional<at::Tensor>& bias,
+    c10::SymInt N,
+    c10::SymInt C,
+    c10::SymInt HxW,
+    int64_t group,
+    double eps)
+{
+    int64_t n = N.guard_int(__FILE__, __LINE__);
+    int64_t c = C.guard_int(__FILE__, __LINE__);
+    int64_t hw = HxW.guard_int(__FILE__, __LINE__);
+    TORCH_CHECK(group > 0 && c % group == 0, "Expected number of channels in input to be divisible by num_groups, but got input of shape ",
+        input.sizes(), " and num_groups=", group);
+
+    at::ScalarType odt = input.scalar_type();
+    bool low = is_low_prec(odt);
+    at::Tensor x = (low ? input.to(at::kFloat) : input).reshape({n, group, (c / group) * hw});
+
+    auto [var, mean] = compute_var_mean(x, {2}, /*correction=*/0.0, /*keepdim=*/true);
+    at::Tensor rstd = at::rsqrt(at::add(var, eps));
+    at::Tensor y = at::mul(at::sub(x, mean), rstd).reshape(input.sizes());
+
+    // weight and bias are per channel
+    std::vector<int64_t> channel_shape(input.dim(), 1);
+    channel_shape[1] = c;
+    if (weight.has_value() && weight->defined()) y = at::mul(y, (low ? weight->to(at::kFloat) : *weight).reshape(channel_shape));
+    if (bias.has_value() && bias->defined()) y = at::add(y, (low ? bias->to(at::kFloat) : *bias).reshape(channel_shape));
+
+    mean = mean.reshape({n, group});
+    rstd = rstd.reshape({n, group});
     if (low) {
         y = y.to(odt);
         mean = mean.to(odt);
@@ -795,6 +740,162 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_layer_norm_backward_vulkan
     return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 
+double loss_grad_scale(const at::Tensor& self, int64_t reduction)
+{
+    return (reduction == 1 && self.numel() > 0) ? 1.0 / static_cast<double>(self.numel()) : 1.0;
+}
+
+at::Tensor& sigmoid_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& output, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, at::mul(grad_output, at::mul(at::rsub(output, 1), output)));
+}
+
+at::Tensor& tanh_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& output, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, at::mul(grad_output, at::rsub(at::mul(output, output), 1)));
+}
+
+at::Tensor& leaky_relu_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& negative_slope, bool /* self_is_result */, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, at::where(at::gt(self, 0), grad_output, at::mul(grad_output, negative_slope)));
+}
+
+at::Tensor& elu_backward_out_vulkan(
+    const at::Tensor& grad_output,
+    const at::Scalar& alpha,
+    const at::Scalar& scale,
+    const at::Scalar& input_scale,
+    bool is_result,
+    const at::Tensor& self_or_result,
+    at::Tensor& grad_input)
+{
+    double negcoef = alpha.toDouble() * scale.toDouble();
+    double negiptcoef = input_scale.toDouble();
+    at::Tensor negative = is_result
+        ? at::mul(grad_output, at::mul(at::add(self_or_result, negcoef), negiptcoef))
+        : at::mul(grad_output, at::mul(at::exp(at::mul(self_or_result, negiptcoef)), negiptcoef * negcoef));
+    at::Tensor positive = at::mul(grad_output, scale);
+    return fill_out(grad_input, at::where(at::le(self_or_result, 0), negative, positive));
+}
+
+at::Tensor hardtanh_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& min_val, const at::Scalar& max_val)
+{
+    at::Tensor outside = at::logical_or(at::le(self, min_val), at::ge(self, max_val));
+    return at::where(outside, at::zeros_like(grad_output), grad_output);
+}
+
+at::Tensor& hardtanh_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& min_val, const at::Scalar& max_val, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, hardtanh_backward_vulkan(grad_output, self, min_val, max_val));
+}
+
+at::Tensor& softplus_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& beta, const at::Scalar& threshold, at::Tensor& grad_input)
+{
+    at::Tensor bx = at::mul(self, beta);
+    return fill_out(grad_input, at::where(at::gt(bx, threshold), grad_output, at::mul(grad_output, at::sigmoid(bx))));
+}
+
+at::Tensor& hardsigmoid_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, at::Tensor& grad_input)
+{
+    at::Tensor inside = at::logical_and(at::gt(self, -3), at::lt(self, 3));
+    return fill_out(grad_input, at::where(inside, at::div(grad_output, 6), at::zeros_like(grad_output)));
+}
+
+at::Tensor hardswish_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self)
+{
+    at::Tensor middle = at::mul(grad_output, at::add(at::div(self, 3), 0.5));
+    at::Tensor upper = at::where(at::le(self, 3), middle, grad_output);
+    return at::where(at::lt(self, -3), at::zeros_like(grad_output), upper);
+}
+
+at::Tensor log_sigmoid_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& /* buffer */)
+{
+    return at::mul(grad_output, at::sigmoid(at::neg(self)));
+}
+
+at::Tensor& log_sigmoid_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& buffer, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, log_sigmoid_backward_vulkan(grad_output, self, buffer));
+}
+
+at::Tensor mse_loss_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& target, int64_t reduction)
+{
+    double norm = 2.0 * loss_grad_scale(self, reduction);
+    return at::mul(at::mul(at::sub(self, target), grad_output), norm);
+}
+
+at::Tensor& mse_loss_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& target, int64_t reduction, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, mse_loss_backward_vulkan(grad_output, self, target, reduction));
+}
+
+at::Tensor& smooth_l1_loss_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& target, int64_t reduction, double beta, at::Tensor& grad_input)
+{
+    double norm = loss_grad_scale(self, reduction);
+    at::Tensor x = at::sub(self, target);
+    at::Tensor g = at::mul(grad_output, norm);
+    if (beta == 0.0) return fill_out(grad_input, at::mul(at::sign(x), g));
+    at::Tensor linear = at::mul(at::sign(x), g);
+    at::Tensor quadratic = at::mul(at::div(x, beta), g);
+    return fill_out(grad_input, at::where(at::lt(at::abs(x), beta), quadratic, linear));
+}
+
+at::Tensor& huber_loss_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& target, int64_t reduction, double delta, at::Tensor& grad_input)
+{
+    double norm = loss_grad_scale(self, reduction);
+    at::Tensor x = at::sub(self, target);
+    at::Tensor g = at::mul(grad_output, norm);
+    at::Tensor linear = at::mul(at::sign(x), at::mul(g, delta));
+    at::Tensor quadratic = at::mul(x, g);
+    return fill_out(grad_input, at::where(at::le(at::abs(x), delta), quadratic, linear));
+}
+
+at::Tensor binary_cross_entropy_backward_vulkan(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction)
+{
+    static constexpr double EPSILON = 1e-12;
+    at::Tensor denominator = at::clamp_min(at::mul(at::rsub(self, 1), self), EPSILON);
+    at::Tensor grad = at::div(at::mul(at::sub(self, target), grad_output), denominator);
+    if (weight.has_value() && weight->defined()) grad = at::mul(grad, *weight);
+    return at::mul(grad, loss_grad_scale(self, reduction));
+}
+
+at::Tensor& binary_cross_entropy_backward_out_vulkan(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    at::Tensor& grad_input)
+{
+    return fill_out(grad_input, binary_cross_entropy_backward_vulkan(grad_output, self, target, weight, reduction));
+}
+
+at::Tensor& soft_margin_loss_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& target, int64_t reduction, at::Tensor& grad_input)
+{
+    // d/dx log(1 + exp(-y x)) = -y sigmoid(-y x)
+    at::Tensor grad = at::mul(at::neg(target), at::sigmoid(at::neg(at::mul(target, self))));
+    return fill_out(grad_input, at::mul(at::mul(grad, grad_output), loss_grad_scale(self, reduction)));
+}
+
+std::tuple<at::Tensor, at::Tensor> prelu_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Tensor& weight)
+{
+    at::Tensor w = weight;
+    if (weight.numel() != 1 && self.dim() > 1) {
+        std::vector<int64_t> vshape(self.dim(), 1);
+        vshape[1] = weight.numel();
+        w = weight.reshape(vshape);
+    }
+    at::Tensor positive = at::gt(self, 0);
+    at::Tensor input_grad = at::where(positive, grad_output, at::mul(w, grad_output));
+    at::Tensor weight_grad = at::where(positive, at::zeros_like(grad_output), at::mul(self, grad_output));
+    return std::make_tuple(input_grad, weight_grad);
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -805,12 +906,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("tril_indices", &tril_indices_vulkan);
     m.impl("triu_indices", &triu_indices_vulkan);
     m.impl("logit", &logit_vulkan);
-    m.impl("lgamma.out", &lgamma_out_vulkan);
     m.impl("gelu.out", &gelu_out_vulkan);
     m.impl("gelu_backward", &gelu_backward_vulkan);
-    m.impl("erfc.out", &erfc_out_vulkan);
-    m.impl("special_i0e.out", &i0e_out_vulkan);
-    m.impl("special_i1e.out", &i1e_out_vulkan);
     m.impl("silu", &silu_vulkan);
     m.impl("hardtanh", &hardtanh_vulkan);
     m.impl("hardsigmoid", &hardsigmoid_vulkan);
@@ -819,8 +916,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("elu", &elu_vulkan);
     m.impl("softplus", &softplus_vulkan);
     m.impl("mish", &mish_vulkan);
-    m.impl("tanhshrink", &tanhshrink_vulkan);
-    m.impl("square", &square_vulkan);
     m.impl("logsumexp", &logsumexp_vulkan);
     m.impl("var.correction", &var_correction_vulkan);
     m.impl("std.correction", &std_correction_vulkan);
@@ -857,8 +952,26 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("heaviside.out", &heaviside_out_vulkan);
     m.impl("isnan", &isnan_vulkan);
     m.impl("_fused_sdp_choice", &fused_sdp_choice_vulkan);
-    m.impl("embedding", &embedding_vulkan);
-    m.impl("embedding_dense_backward", &embedding_dense_backward_vulkan);
     m.impl("native_layer_norm", &native_layer_norm_vulkan);
     m.impl("native_layer_norm_backward", &native_layer_norm_backward_vulkan);
+    m.impl("native_group_norm", &native_group_norm_vulkan);
+    m.impl("sigmoid_backward.grad_input", &sigmoid_backward_out_vulkan);
+    m.impl("tanh_backward.grad_input", &tanh_backward_out_vulkan);
+    m.impl("leaky_relu_backward.grad_input", &leaky_relu_backward_out_vulkan);
+    m.impl("elu_backward.grad_input", &elu_backward_out_vulkan);
+    m.impl("hardtanh_backward", &hardtanh_backward_vulkan);
+    m.impl("hardtanh_backward.grad_input", &hardtanh_backward_out_vulkan);
+    m.impl("softplus_backward.grad_input", &softplus_backward_out_vulkan);
+    m.impl("hardsigmoid_backward.grad_input", &hardsigmoid_backward_out_vulkan);
+    m.impl("hardswish_backward", &hardswish_backward_vulkan);
+    m.impl("log_sigmoid_backward", &log_sigmoid_backward_vulkan);
+    m.impl("log_sigmoid_backward.grad_input", &log_sigmoid_backward_out_vulkan);
+    m.impl("mse_loss_backward", &mse_loss_backward_vulkan);
+    m.impl("mse_loss_backward.grad_input", &mse_loss_backward_out_vulkan);
+    m.impl("smooth_l1_loss_backward.grad_input", &smooth_l1_loss_backward_out_vulkan);
+    m.impl("huber_loss_backward.out", &huber_loss_backward_out_vulkan);
+    m.impl("binary_cross_entropy_backward", &binary_cross_entropy_backward_vulkan);
+    m.impl("binary_cross_entropy_backward.grad_input", &binary_cross_entropy_backward_out_vulkan);
+    m.impl("soft_margin_loss_backward.grad_input", &soft_margin_loss_backward_out_vulkan);
+    m.impl("_prelu_kernel_backward", &prelu_backward_vulkan);
 }

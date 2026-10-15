@@ -56,7 +56,7 @@ BYTE_WIDTHS = [
 def vec_size(nbytes):
     """
     How many elements a thread handles per step: as many as fit in 128 bits,
-    capped at 4. Mirrored by get_dtype_vec_size in src/api/ops/helpers.h.
+    capped at 4. The host reads it from VEC_SIZE_FOR_BYTES in shader_kernels.h.
     """
     return int(min(16 / nbytes, 4))
 
@@ -121,6 +121,15 @@ KERNELS = [
     ]),
     Kernel('copy', 'ops/copy.slang', [
         Entry('copy_main', BYTE_WIDTHS),
+    ]),
+    Kernel('index_gather', 'ops/index_gather.slang', [
+        Entry('index_gather_main', BYTE_WIDTHS),
+    ]),
+    Kernel('embedding_backward', 'ops/embedding_backward.slang', [
+        Entry('embedding_backward_main', FLOATS),
+    ]),
+    Kernel('sort', 'ops/sort.slang', [
+        Entry('sort_main', DTYPES),
     ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
