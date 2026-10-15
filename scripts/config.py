@@ -98,6 +98,9 @@ KERNELS = [
     Kernel('integer_binary', 'ops/integer_binary.slang', [
         Entry('integer_binary_main', INTEGERS),
     ]),
+    Kernel('special', 'ops/special.slang', [
+        Entry('special_main', FLOATS),
+    ]),
     Kernel('fill', 'ops/fill.slang', [
         Entry('fill_main', DTYPES, ('vec',)),
     ]),
