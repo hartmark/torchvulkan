@@ -314,13 +314,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> native_group_norm_backward_vulkan
     at::Tensor grad_input, grad_weight, grad_bias;
     if (output_mask[0]) {
         at::Tensor dyw = has_weight ? at::mul(dy, w) : dy;
-        at::Tensor mean_dyw = at::mean(dyw, {2, 3}, /*keepdim=*/true);
-        at::Tensor mean_dyw_xhat = at::mean(at::mul(dyw, xhat), {2, 3}, /*keepdim=*/true);
+        at::Tensor mean_dyw = at::mean(dyw, at::IntArrayRef{2, 3}, /*keepdim=*/true);
+        at::Tensor mean_dyw_xhat = at::mean(at::mul(dyw, xhat), at::IntArrayRef{2, 3}, /*keepdim=*/true);
         grad_input = at::mul(r, at::sub(at::sub(dyw, mean_dyw), at::mul(xhat, mean_dyw_xhat))).reshape(input.sizes()).to(dtype);
     }
     at::ScalarType param_dtype = has_weight ? weight->scalar_type() : dtype;
-    if (output_mask[1]) grad_weight = at::sum(at::mul(dy, xhat), {0, 3}).reshape({c}).to(param_dtype);
-    if (output_mask[2]) grad_bias = at::sum(dy, {0, 3}).reshape({c}).to(param_dtype);
+    if (output_mask[1]) grad_weight = at::sum(at::mul(dy, xhat), at::IntArrayRef{0, 3}).reshape({c}).to(param_dtype);
+    if (output_mask[2]) grad_bias = at::sum(dy, at::IntArrayRef{0, 3}).reshape({c}).to(param_dtype);
     return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 
@@ -584,7 +584,7 @@ std::tuple<at::Tensor, at::Tensor> multilabel_margin_loss_forward_vulkan(const a
 {
     auto [hinge, active, is_target] = multilabel_terms(self, target);
     int64_t c = hinge.size(2);
-    at::Tensor loss = at::div(at::sum(at::where(active, hinge, at::zeros_like(hinge)), {1, 2}), static_cast<double>(c));
+    at::Tensor loss = at::div(at::sum(at::where(active, hinge, at::zeros_like(hinge)), at::IntArrayRef{1, 2}), static_cast<double>(c));
     if (self.dim() <= 1) loss = loss.reshape({});
     return std::make_tuple(reduce_loss(loss, reduction), is_target.to(self.scalar_type()).view(self.sizes()));
 }

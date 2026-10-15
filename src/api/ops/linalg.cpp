@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <torch/version.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/WrapDimUtils.h>
 #include <algorithm>
@@ -491,8 +492,14 @@ std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor&> linalg_solve_ex_o
     check_square(A, "torch.linalg.solve");
     bool vector_case = is_vector_rhs(A, B);
     at::Tensor b = vector_case ? B.unsqueeze(left ? -1 : -2) : B;
-    auto [lu, piv, inf] = lu_factor_impl(A, "torch.linalg.solve");
-    at::Tensor x = lu_solve_impl(lu, piv, b, left, false);
+    // torch 2.10's solve backward expects the LU of A^T when A is contiguous and real; 2.11 factors A itself
+#if TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR <= 10
+    bool use_A_T = A.is_contiguous() && !A.is_complex();
+#else
+    bool use_A_T = false;
+#endif
+    auto [lu, piv, inf] = lu_factor_impl(use_A_T ? A.mT() : A, "torch.linalg.solve");
+    at::Tensor x = lu_solve_impl(lu, piv, b, left, /*adjoint=*/use_A_T);
     if (vector_case) x = x.squeeze(left ? -1 : -2);
     fill_out(result, x);
     fill_out(LU, lu);
@@ -677,6 +684,7 @@ at::Tensor orgqr_impl(const at::Tensor& input, const at::Tensor& tau)
     at::ScalarType dtype = linalg_dtype(input, "torch.linalg.householder_product");
     at::Tensor q = batched_copy(input, dtype);
     at::Tensor t = tau.to(dtype).reshape({q.size(0), tau.size(-1)}).contiguous();
+    if (t.size(1) == 0) return at::eye(input.size(-2), input.size(-1), input.options()).expand(input.sizes()).contiguous();
     if (q.numel() > 0) dispatch_householder_shader(HouseholderMode::ORGQR, q, t, at::Tensor(), true, false);
     return q.view(input.sizes()).to(input.scalar_type());
 }

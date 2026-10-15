@@ -371,6 +371,12 @@ class TestVulkanOps(TestCase):
                 self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
                 continue
 
+            # high-degree polynomial recurrences run in float32 and cancel near their roots, where how a driver fuses
+            # multiply-adds shows
+            elif op.name.startswith("special.") and "polynomial" in op.name:
+                self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
+                continue
+
             # the other special functions are accurate in float32 but downcast float64 to float32
             elif dtype == torch.float64 and op.name in (
                 "erf", "erfc", "erfinv", "sinc", "special.entr", "lgamma", "digamma",
@@ -486,6 +492,9 @@ class TestVulkanOps(TestCase):
                         self.assertEqual(present, torch.zeros_like(present))
                     continue
                 if op.name in MATMUL_OPS or "attention" in op.name or "linear" in op.name or "conv" in op.name:
+                    self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-3)
+                # each input element sums the gradients of every output that sampled it, in the GPU's order
+                elif op.name.startswith("grid_sampler"):
                     self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-3)
                 # chains of matmuls, where the GPU's summation order compounds
                 elif op.name.startswith("linalg."):
