@@ -22,17 +22,16 @@ float signedPow(float base, float exponent)
     return (fmod(abs(exponent), 2.0f) == 1.0f) ? -r : r;
 }
 
-// sin of the float32 product pi * x, as the CPU's sinf sees it. Near a multiple of pi the product's residual is
-// ~1e-7, which a fast-math GPU sin can round to 0, so the residual comes from an fma against float pi and its error
+// sin of the float32 product pi * x, as the CPU's sinf sees it. At an integer x the product is within a rounding error
+// of x * pi, which a GPU sin, or a compiler folding pi * x - x * pi, turns into 0; float pi is 13176795 * 2^-22, so there
+// the rounding error is an exact integer count of 2^-22
 float sinPiProduct(float x)
 {
-    const float PI = 3.14159265358979323846f;
-    const float PI_ERROR = 8.742278e-8f;
-    float v = PI * x;
-    float k = round(v * 0.318309886183790671538f);
-    float r = fma(-PI, k, v) + k * PI_ERROR;
-    float s = abs(r) < 1e-3f ? r : sin(r);
-    return fmod(abs(k), 2.0f) == 1.0f ? -s : s;
+    float v = 3.14159265358979323846f * x;
+    if (x != floor(x) || abs(x) >= 65536.0f) return sin(v);
+    int64_t rounding = int64_t(v * 4194304.0f) - int64_t(13176795) * int64_t(x);
+    float r = float(rounding) * 2.38418579e-7f + x * 8.742278e-8f;
+    return fmod(abs(x), 2.0f) == 1.0f ? -r : r;
 }
 
 public float trigamma(float x)
