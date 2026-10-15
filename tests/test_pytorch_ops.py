@@ -324,7 +324,7 @@ class TestVulkanOps(TestCase):
                 continue
 
             # FFTs sum in butterfly order with float32 twiddles, whatever the input dtype
-            elif op.name.startswith("fft.") and dtype != torch.float64:
+            elif (op.name.startswith("fft.") or op.name in ("stft", "istft")) and dtype != torch.float64:
                 self.assertEqual(actual, expected, atol=1e-4, rtol=1e-4, exact_dtype=False)
                 continue
 
