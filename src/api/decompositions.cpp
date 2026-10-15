@@ -17,11 +17,6 @@ std::vector<int64_t> all_dims(const at::Tensor& t)
     return d;
 }
 
-bool is_low_prec(at::ScalarType t)
-{
-    return t == at::kHalf || t == at::kBFloat16;
-}
-
 at::Tensor p_norm(const at::Tensor& self, double p, at::OptionalIntArrayRef dim, bool keepdim)
 {
     at::ScalarType odt = self.scalar_type();
@@ -38,13 +33,6 @@ at::Tensor p_norm(const at::Tensor& self, double p, at::OptionalIntArrayRef dim,
     else if (p == 0.0) r = at::sum(at::ne(a, 0).to(a.scalar_type()), dv, keepdim);
     else r = at::pow(at::sum(at::pow(a, p), dv, keepdim), 1.0 / p);
     return low ? r.to(odt) : r;
-}
-
-at::Tensor reduce_loss(const at::Tensor& t, int64_t reduction)
-{
-    if (reduction == 1) return at::mean(t);
-    if (reduction == 2) return at::sum(t);
-    return t;
 }
 
 at::Tensor dot_vulkan(const at::Tensor& self, const at::Tensor& other)

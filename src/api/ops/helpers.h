@@ -320,6 +320,32 @@ inline c10::ScalarType reduce_accumulate_dtype(c10::ScalarType dtype)
     return (dtype == at::kHalf || dtype == at::kBFloat16) ? at::kFloat : dtype;
 }
 
+inline bool is_low_prec(at::ScalarType dtype)
+{
+    return dtype == at::kHalf || dtype == at::kBFloat16;
+}
+
+// the complex dtype a real one pairs into: complex128 for float64, complex64 otherwise
+inline c10::ScalarType get_dtype_complex(c10::ScalarType real)
+{
+    return real == at::kDouble ? at::kComplexDouble : at::kComplexFloat;
+}
+
+// 0 = none, 1 = mean, 2 = sum, as torch's Reduction enum
+inline at::Tensor reduce_loss(const at::Tensor& loss, int64_t reduction)
+{
+    if (reduction == 1) return at::mean(loss);
+    if (reduction == 2) return at::sum(loss);
+    return loss;
+}
+
+inline std::vector<int64_t> to_ints(c10::SymIntArrayRef sizes)
+{
+    std::vector<int64_t> values;
+    for (const c10::SymInt& s : sizes) values.push_back(s.guard_int(__FILE__, __LINE__));
+    return values;
+}
+
 // the dtype a random kernel samples in: float64 for float64 outputs, float32 otherwise (T.Real in philox.slang)
 inline c10::ScalarType random_real_dtype(c10::ScalarType dtype)
 {
