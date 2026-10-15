@@ -137,6 +137,9 @@ KERNELS = [
     Kernel('sort', 'ops/sort.slang', [
         Entry('sort_main', DTYPES),
     ]),
+    Kernel('scatter', 'ops/scatter.slang', [
+        Entry('scatter_main', DTYPES),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
