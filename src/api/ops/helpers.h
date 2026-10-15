@@ -76,6 +76,12 @@ inline c10::ScalarType get_dtype_width_variant(c10::ScalarType dtype)
     }
 }
 
+// copy-only kernels move bytes, so a dtype is usable when its byte-width variant is (complex128 has its own)
+inline bool is_dtype_copyable(const at::Tensor& on, c10::ScalarType dtype)
+{
+    return c10::elementSize(dtype) == 16 || is_dtype_supported(on, get_dtype_width_variant(dtype));
+}
+
 // set by scripts/config.py, which compiles the shaders with the same table
 inline int get_dtype_vec_size(at::ScalarType dtype) 
 {
@@ -318,6 +324,32 @@ inline c10::ScalarType reduce_compute_dtype(const at::Tensor& self, c10::optiona
 inline c10::ScalarType reduce_accumulate_dtype(c10::ScalarType dtype)
 {
     return (dtype == at::kHalf || dtype == at::kBFloat16) ? at::kFloat : dtype;
+}
+
+inline bool is_low_prec(at::ScalarType dtype)
+{
+    return dtype == at::kHalf || dtype == at::kBFloat16;
+}
+
+// the complex dtype a real one pairs into: complex128 for float64, complex64 otherwise
+inline c10::ScalarType get_dtype_complex(c10::ScalarType real)
+{
+    return real == at::kDouble ? at::kComplexDouble : at::kComplexFloat;
+}
+
+// 0 = none, 1 = mean, 2 = sum, as torch's Reduction enum
+inline at::Tensor reduce_loss(const at::Tensor& loss, int64_t reduction)
+{
+    if (reduction == 1) return at::mean(loss);
+    if (reduction == 2) return at::sum(loss);
+    return loss;
+}
+
+inline std::vector<int64_t> to_ints(c10::SymIntArrayRef sizes)
+{
+    std::vector<int64_t> values;
+    for (const c10::SymInt& s : sizes) values.push_back(s.guard_int(__FILE__, __LINE__));
+    return values;
 }
 
 // the dtype a random kernel samples in: float64 for float64 outputs, float32 otherwise (T.Real in philox.slang)

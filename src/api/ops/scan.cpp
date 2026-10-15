@@ -9,7 +9,7 @@
 
 namespace {
 
-enum class ScanOp { SUM = 0, PROD = 1 };
+enum class ScanOp { SUM = 0, PROD = 1, LOGADDEXP = 2 };
 
 at::Tensor cumscan(
     const at::Tensor& self,
@@ -25,7 +25,7 @@ at::Tensor cumscan(
 
     int64_t d = c10::maybe_wrap_dim(dim, x.dim());
     if (!is_dtype_supported(x, compute) || x.dim() > MAX_DIMS || !fits_32bit_indexing({x})) {
-        at::Tensor cpu = op == ScanOp::SUM ? at::cumsum(x.cpu(), d) : at::cumprod(x.cpu(), d);
+        at::Tensor cpu = op == ScanOp::SUM ? at::cumsum(x.cpu(), d) : op == ScanOp::PROD ? at::cumprod(x.cpu(), d) : at::logcumsumexp(x.cpu(), d);
         return cpu.to(out_dtype).to(self.device());
     }
 
@@ -95,6 +95,17 @@ at::Tensor& cumprod_out_vulkan(
 {
     out.copy_(cumscan(self, dim, dtype, ScanOp::PROD));
     return out;
+}
+
+at::Tensor logcumsumexp_vulkan(const at::Tensor& self, int64_t dim)
+{
+    check_floating(self, "logcumsumexp");
+    return cumscan(self, dim, self.scalar_type(), ScanOp::LOGADDEXP);
+}
+
+at::Tensor& logcumsumexp_out_vulkan(const at::Tensor& self, int64_t dim, at::Tensor& out)
+{
+    return fill_out(out, logcumsumexp_vulkan(self, dim));
 }
 
 enum class CumArgOp { MAX = 0, MIN = 1 };
@@ -193,6 +204,8 @@ void cummin_helper_vulkan(
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("cumsum.out", &cumsum_out_vulkan);
     m.impl("cumprod.out", &cumprod_out_vulkan);
+    m.impl("_logcumsumexp", &logcumsumexp_vulkan);
+    m.impl("_logcumsumexp.out", &logcumsumexp_out_vulkan);
     m.impl("_cummax_helper", &cummax_helper_vulkan);
     m.impl("_cummin_helper", &cummin_helper_vulkan);
 }

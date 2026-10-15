@@ -17,11 +17,6 @@ std::vector<int64_t> all_dims(const at::Tensor& t)
     return d;
 }
 
-bool is_low_prec(at::ScalarType t)
-{
-    return t == at::kHalf || t == at::kBFloat16;
-}
-
 at::Tensor p_norm(const at::Tensor& self, double p, at::OptionalIntArrayRef dim, bool keepdim)
 {
     at::ScalarType odt = self.scalar_type();
@@ -38,13 +33,6 @@ at::Tensor p_norm(const at::Tensor& self, double p, at::OptionalIntArrayRef dim,
     else if (p == 0.0) r = at::sum(at::ne(a, 0).to(a.scalar_type()), dv, keepdim);
     else r = at::pow(at::sum(at::pow(a, p), dv, keepdim), 1.0 / p);
     return low ? r.to(odt) : r;
-}
-
-at::Tensor reduce_loss(const at::Tensor& t, int64_t reduction)
-{
-    if (reduction == 1) return at::mean(t);
-    if (reduction == 2) return at::sum(t);
-    return t;
 }
 
 at::Tensor dot_vulkan(const at::Tensor& self, const at::Tensor& other)
@@ -896,6 +884,95 @@ std::tuple<at::Tensor, at::Tensor> prelu_backward_vulkan(const at::Tensor& grad_
     return std::make_tuple(input_grad, weight_grad);
 }
 
+at::Tensor& logit_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, c10::optional<double> eps, at::Tensor& grad_input)
+{
+    at::Tensor grad = at::div(grad_output, at::mul(self, at::rsub(self, 1)));
+    double lo = eps.has_value() && *eps >= 0 ? *eps : 0.0;
+    double hi = 1.0 - lo;
+    at::Tensor outside = at::logical_or(at::lt(self, lo), at::gt(self, hi));
+    double fill = eps.has_value() && *eps >= 0 ? 0.0 : std::numeric_limits<double>::quiet_NaN();
+    return fill_out(grad_input, at::where(outside, at::full_like(grad, fill), grad));
+}
+
+at::Tensor shrink_backward(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& lambd)
+{
+    double l = lambd.toDouble();
+    at::Tensor inside = at::logical_and(at::ge(self, -l), at::le(self, l));
+    return at::where(inside, at::zeros_like(grad_output), grad_output);
+}
+
+at::Tensor& hardshrink_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& lambd, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, shrink_backward(grad_output, self, lambd));
+}
+
+at::Tensor& softshrink_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, const at::Scalar& lambd, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, shrink_backward(grad_output, self, lambd));
+}
+
+at::Tensor glu_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& self, int64_t dim)
+{
+    int64_t d = c10::maybe_wrap_dim(dim, self.dim());
+    int64_t half = self.size(d) / 2;
+    at::Tensor a = self.narrow(d, 0, half);
+    at::Tensor sig = at::sigmoid(self.narrow(d, half, half));
+    at::Tensor grad_a = at::mul(grad_output, sig);
+    at::Tensor grad_b = at::mul(at::mul(grad_a, a), at::rsub(sig, 1));
+    return at::cat({grad_a, grad_b}, d);
+}
+
+at::Tensor& glu_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, int64_t dim, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, glu_backward_vulkan(grad_output, self, dim));
+}
+
+at::Tensor addbmm_vulkan(const at::Tensor& self, const at::Tensor& batch1, const at::Tensor& batch2, const at::Scalar& beta, const at::Scalar& alpha)
+{
+    TORCH_CHECK(batch1.dim() == 3 && batch2.dim() == 3, "batch1 and batch2 must be 3D tensors");
+    TORCH_CHECK(batch1.size(0) == batch2.size(0), "batch1 and batch2 must have same number of batches, got ", batch1.size(0), " and ", batch2.size(0));
+    TORCH_CHECK(batch1.size(2) == batch2.size(1), "Incompatible matrix sizes for bmm (", batch1.size(1), "x", batch1.size(2), " and ", batch2.size(1), "x", batch2.size(2), ")");
+    int64_t b = batch1.size(0), n = batch1.size(1), k = batch1.size(2), p = batch2.size(2);
+
+    at::Tensor product = (b == 0 || k == 0)
+        ? at::zeros({n, p}, batch1.options())
+        : at::mm(batch1.permute({1, 0, 2}).reshape({n, b * k}), batch2.reshape({b * k, p}));
+    at::Scalar a = alpha, c = beta;
+    if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) { a = alpha.toLong(); c = beta.toLong(); }
+    at::Tensor result = at::mul(product, a);
+    if (c.toDouble() != 0.0) result = at::add(result, at::mul(self.expand({n, p}), c));
+    return result.to(self.scalar_type());
+}
+
+at::Tensor& addbmm_out_vulkan(const at::Tensor& self, const at::Tensor& batch1, const at::Tensor& batch2, const at::Scalar& beta, const at::Scalar& alpha, at::Tensor& out)
+{
+    return fill_out(out, addbmm_vulkan(self, batch1, batch2, beta, alpha));
+}
+
+at::Tensor& addbmm_vulkan_(at::Tensor& self, const at::Tensor& batch1, const at::Tensor& batch2, const at::Scalar& beta, const at::Scalar& alpha)
+{
+    return copy_inplace_result(self, addbmm_vulkan(self, batch1, batch2, beta, alpha));
+}
+
+at::Tensor& mm_out_vulkan(const at::Tensor& self, const at::Tensor& mat2, at::Tensor& out)
+{
+    return fill_out(out, at::mm(self, mat2));
+}
+
+at::Tensor mm_dtype_vulkan(const at::Tensor& self, const at::Tensor& mat2, at::ScalarType out_dtype)
+{
+    TORCH_CHECK(out_dtype == self.scalar_type() || (out_dtype == at::kFloat && is_low_prec(self.scalar_type())),
+        "out_dtype must be the same as input dtype or fp32 for fp16/bf16 inputs"
+    );
+    if (out_dtype == self.scalar_type()) return at::mm(self, mat2);
+    return at::mm(self.to(at::kFloat), mat2.to(at::kFloat));
+}
+
+at::Tensor& mm_dtype_out_vulkan(const at::Tensor& self, const at::Tensor& mat2, at::ScalarType out_dtype, at::Tensor& out)
+{
+    return fill_out(out, mm_dtype_vulkan(self, mat2, out_dtype));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -974,4 +1051,15 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("binary_cross_entropy_backward.grad_input", &binary_cross_entropy_backward_out_vulkan);
     m.impl("soft_margin_loss_backward.grad_input", &soft_margin_loss_backward_out_vulkan);
     m.impl("_prelu_kernel_backward", &prelu_backward_vulkan);
+    m.impl("logit_backward.grad_input", &logit_backward_out_vulkan);
+    m.impl("hardshrink_backward.grad_input", &hardshrink_backward_out_vulkan);
+    m.impl("softshrink_backward.grad_input", &softshrink_backward_out_vulkan);
+    m.impl("glu_backward", &glu_backward_vulkan);
+    m.impl("glu_backward.grad_input", &glu_backward_out_vulkan);
+    m.impl("addbmm", &addbmm_vulkan);
+    m.impl("addbmm.out", &addbmm_out_vulkan);
+    m.impl("addbmm_", &addbmm_vulkan_);
+    m.impl("mm.out", &mm_out_vulkan);
+    m.impl("mm.dtype", &mm_dtype_vulkan);
+    m.impl("mm.dtype_out", &mm_dtype_out_vulkan);
 }

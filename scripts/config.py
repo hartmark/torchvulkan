@@ -95,6 +95,12 @@ KERNELS = [
     Kernel('compare', 'ops/compare.slang', [
         Entry('compare_main', DTYPES, ('vec',)),
     ]),
+    Kernel('integer_binary', 'ops/integer_binary.slang', [
+        Entry('integer_binary_main', INTEGERS),
+    ]),
+    Kernel('special', 'ops/special.slang', [
+        Entry('special_main', FLOATS),
+    ]),
     Kernel('fill', 'ops/fill.slang', [
         Entry('fill_main', DTYPES, ('vec',)),
     ]),
@@ -131,6 +137,51 @@ KERNELS = [
     Kernel('sort', 'ops/sort.slang', [
         Entry('sort_main', DTYPES),
     ]),
+    Kernel('scatter', 'ops/scatter.slang', [
+        Entry('scatter_main', DTYPES),
+    ]),
+    Kernel('searchsorted', 'ops/searchsorted.slang', [
+        Entry('searchsorted_main', DTYPES),
+    ]),
+    Kernel('pool', 'ops/pool.slang', [
+        Entry('pool_main', DTYPES),
+    ]),
+    Kernel('resample', 'ops/resample.slang', [
+        Entry('resample_main', [F64, F32]),
+    ]),
+    Kernel('resample_u8', 'ops/resample_u8.slang', [
+        Entry('resample_u8_main', [U8]),
+    ]),
+    Kernel('grid_sample', 'ops/grid_sample.slang', [
+        Entry('grid_sample_main', [F64, F32]),
+    ]),
+    Kernel('ctc', 'ops/ctc.slang', [
+        Entry('ctc_main', [F64, F32]),
+    ]),
+    Kernel('cholesky', 'ops/cholesky.slang', [
+        Entry('cholesky_main', [F64, F32]),
+    ]),
+    Kernel('lu', 'ops/lu.slang', [
+        Entry('lu_main', [F64, F32]),
+    ]),
+    Kernel('triangular_solve', 'ops/triangular_solve.slang', [
+        Entry('triangular_solve_main', [F64, F32]),
+    ]),
+    Kernel('householder', 'ops/householder.slang', [
+        Entry('householder_main', [F64, F32]),
+    ]),
+    Kernel('jacobi', 'ops/jacobi.slang', [
+        Entry('jacobi_main', [F64, F32]),
+    ]),
+    Kernel('ldl', 'ops/ldl.slang', [
+        Entry('ldl_main', [F64, F32]),
+    ]),
+    Kernel('eig', 'ops/eig.slang', [
+        Entry('eig_main', [F64, F32]),
+    ]),
+    Kernel('fft', 'ops/fft.slang', [
+        Entry('fft_main', [F64, F32]),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
@@ -139,6 +190,12 @@ KERNELS = [
     ]),
     Kernel('matmul_simd_64', 'ops/matmul_simd.slang', [
         Entry('matmul_simd_main', DTYPES, ('vec',), constants=(64,)),
+    ]),
+    Kernel('conv_128', 'ops/conv.slang', [
+        Entry('conv_main', [d for d in FLOATS if d.bytes < 8], ('vec',), constants=(128,)),
+    ]),
+    Kernel('conv_64', 'ops/conv.slang', [
+        Entry('conv_main', FLOATS, ('vec',), constants=(64,)),
     ]),
     Kernel('matmul_coop_8', 'ops/matmul_coop.slang', [
         Entry('matmul_coop_main', DTYPES, ('vec',), constants=(8,)),

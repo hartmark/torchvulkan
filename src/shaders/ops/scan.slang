@@ -43,6 +43,16 @@ public struct ProdScanOp<T : ITorchVulkan> : ICumScanOp<T>
     public static T combine(T a, T b) { return T.ext_mul(a, b); }
 }
 
+public struct LogAddExpScanOp<T : ITorchVulkan> : ICumScanOp<T>
+{
+    public static T identity() { return T.ext_lowest(); }
+    public static T combine(T a, T b)
+    {
+        if (T.ext_isnan(a) || T.ext_isnan(b)) return T.ext_add(a, b);
+        return T.ext_logaddexp(a, b);
+    }
+}
+
 public void scanKernel<T : ITorchVulkan, Op : ICumScanOp<T>, let SMEM_SIZE : int>(
     uint line,
     uint lane,
@@ -110,6 +120,7 @@ public void dispatchScan<T : ITorchVulkan, let SMEM_SIZE : int>(
     {
     case 0: scanKernel<T, SumScanOp<T>, SMEM_SIZE>(line, lane, smem, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.num_lines, pcs.scan_size, pcs.scan_stride_in, pcs.scan_stride_out); break;
     case 1: scanKernel<T, ProdScanOp<T>, SMEM_SIZE>(line, lane, smem, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.num_lines, pcs.scan_size, pcs.scan_stride_in, pcs.scan_stride_out); break;
+    case 2: scanKernel<T, LogAddExpScanOp<T>, SMEM_SIZE>(line, lane, smem, pcs.tensor_in, pcs.tensor_out, pcs.metadata, pcs.num_lines, pcs.scan_size, pcs.scan_stride_in, pcs.scan_stride_out); break;
     default: break;
     }
 }

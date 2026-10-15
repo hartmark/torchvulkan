@@ -275,14 +275,28 @@ at::Tensor frac_vulkan(const at::Tensor& self)
     return unary_op_vulkan(self, UnaryOp::FRAC, [](const at::Tensor& a) { return at::frac(a); });
 }
 
+// complex values run on the CPU: the shaders have no complex dtype yet
+at::Tensor complex_on_cpu(const at::Tensor& self, const std::function<at::Tensor(const at::Tensor&)>& op)
+{
+    TORCH_WARN_ONCE("torchvulkan [WARNING]: A unary op on ", self.scalar_type(), " can't run on the Vulkan device. Falling back to CPU.");
+    return op(self.cpu()).to(self.device());
+}
+
 at::Tensor abs_vulkan(const at::Tensor& self)
 {
+    if (self.is_complex()) return complex_on_cpu(self, [](const at::Tensor& a) { return at::abs(a); });
     return unary_op_vulkan(self, UnaryOp::ABS, [](const at::Tensor& a) { return at::abs(a); });
 }
 
 at::Tensor sign_vulkan(const at::Tensor& self)
 {
     return unary_op_vulkan(self, UnaryOp::SIGN, [](const at::Tensor& a) { return at::sign(a); });
+}
+
+at::Tensor sgn_vulkan(const at::Tensor& self)
+{
+    if (self.is_complex()) return complex_on_cpu(self, [](const at::Tensor& a) { return at::sgn(a); });
+    return sign_vulkan(self);
 }
 
 at::Tensor erf_vulkan(const at::Tensor& self)
@@ -389,7 +403,7 @@ at::Tensor& round_out_vulkan(const at::Tensor& self, at::Tensor& out) { return f
 at::Tensor& frac_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, frac_vulkan(self)); }
 at::Tensor& abs_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, abs_vulkan(self)); }
 at::Tensor& sign_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sign_vulkan(self)); }
-at::Tensor& sgn_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sign_vulkan(self)); }
+at::Tensor& sgn_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, sgn_vulkan(self)); }
 at::Tensor& erf_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erf_vulkan(self)); }
 at::Tensor& erfc_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erfc_vulkan(self)); }
 at::Tensor& erfinv_out_vulkan(const at::Tensor& self, at::Tensor& out) { return fill_out(out, erfinv_vulkan(self)); }
@@ -441,7 +455,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("frac", &frac_vulkan);
     m.impl("abs", &abs_vulkan);
     m.impl("sign", &sign_vulkan);
-    m.impl("sgn", &sign_vulkan);
+    m.impl("sgn", &sgn_vulkan);
     m.impl("erf", &erf_vulkan);
     m.impl("erfinv", &erfinv_vulkan);
     m.impl("sinc", &sinc_vulkan);

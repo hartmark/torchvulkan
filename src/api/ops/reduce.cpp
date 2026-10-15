@@ -1,6 +1,7 @@
 #include <torch/extension.h>
 #include <ATen/WrapDimUtils.h>
 #include <c10/core/MemoryFormat.h>
+#include <algorithm>
 #include <limits>
 #include <tuple>
 #include "vulkan/memory.h"
@@ -361,6 +362,184 @@ at::Tensor& argmin_out_vulkan(
     return out;
 }
 
+// NaN counts as nonzero
+at::Tensor count_nonzero_along(const at::Tensor& self, at::OptionalIntArrayRef dim, bool keepdim)
+{
+    return sum_dim_vulkan(at::ne(self, 0), dim, keepdim, at::kLong);
+}
+
+at::Tensor& any_out_vulkan(const at::Tensor& self, int64_t dim, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, at::gt(count_nonzero_along(self, at::IntArrayRef{dim}, keepdim), 0));
+}
+
+at::Tensor& any_all_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, at::gt(count_nonzero_along(self, at::OptionalIntArrayRef(), false), 0));
+}
+
+at::Tensor& all_out_vulkan(const at::Tensor& self, int64_t dim, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, at::eq(sum_dim_vulkan(at::eq(self, 0), at::IntArrayRef{dim}, keepdim, at::kLong), 0));
+}
+
+at::Tensor& all_all_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, at::eq(sum_dim_vulkan(at::eq(self, 0), at::OptionalIntArrayRef(), false, at::kLong), 0));
+}
+
+at::Tensor count_nonzero_vulkan(const at::Tensor& self, at::IntArrayRef dim)
+{
+    return count_nonzero_along(self, dim, false);
+}
+
+at::Tensor nansum_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, bool keepdim, c10::optional<at::ScalarType> dtype)
+{
+    at::Tensor x = at::isFloatingType(self.scalar_type()) ? at::where(at::isnan(self), at::zeros_like(self), self) : self;
+    return sum_dim_vulkan(x, dim, keepdim, dtype);
+}
+
+at::Tensor& nansum_out_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, bool keepdim, c10::optional<at::ScalarType> dtype, at::Tensor& out)
+{
+    return fill_out(out, nansum_vulkan(self, dim, keepdim, dtype));
+}
+
+at::Tensor max_vulkan(const at::Tensor& self)
+{
+    TORCH_CHECK(self.numel() > 0, "max(): Expected reduction dim to be specified for input.numel() == 0. Specify the reduction dim with the 'dim' argument.");
+    return amax_vulkan(self, {}, false);
+}
+
+at::Tensor min_vulkan(const at::Tensor& self)
+{
+    TORCH_CHECK(self.numel() > 0, "min(): Expected reduction dim to be specified for input.numel() == 0. Specify the reduction dim with the 'dim' argument.");
+    return amin_vulkan(self, {}, false);
+}
+
+at::Tensor& amax_out_vulkan(const at::Tensor& self, at::IntArrayRef dim, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, amax_vulkan(self, dim, keepdim));
+}
+
+at::Tensor& amin_out_vulkan(const at::Tensor& self, at::IntArrayRef dim, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, amin_vulkan(self, dim, keepdim));
+}
+
+at::Tensor& sum_out_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, bool keepdim, c10::optional<at::ScalarType> dtype, at::Tensor& out)
+{
+    return fill_out(out, sum_dim_vulkan(self, dim, keepdim, dtype));
+}
+
+at::Tensor& max_unary_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, max_vulkan(self));
+}
+
+at::Tensor& min_unary_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, min_vulkan(self));
+}
+
+std::tuple<at::Tensor&, at::Tensor&> aminmax_out_vulkan(const at::Tensor& self, c10::optional<int64_t> dim, bool keepdim, at::Tensor& min, at::Tensor& max)
+{
+    if (dim.has_value()) {
+        TORCH_CHECK(self.dim() == 0 || self.size(c10::maybe_wrap_dim(*dim, self.dim())) > 0,
+            "aminmax(): Expected reduction dim ", *dim, " to have non-zero size."
+        );
+        fill_out(min, amin_vulkan(self, {*dim}, keepdim));
+        fill_out(max, amax_vulkan(self, {*dim}, keepdim));
+    } else {
+        TORCH_CHECK(self.numel() > 0, "aminmax(): cannot compute aminmax over an empty dimension as the operation has no identity.");
+        at::Tensor lo = amin_vulkan(self, {}, false);
+        at::Tensor hi = amax_vulkan(self, {}, false);
+        if (keepdim) {
+            std::vector<int64_t> ones(self.dim(), 1);
+            lo = lo.reshape(ones);
+            hi = hi.reshape(ones);
+        }
+        fill_out(min, lo);
+        fill_out(max, hi);
+    }
+    return std::forward_as_tuple(min, max);
+}
+
+bool equal_vulkan(const at::Tensor& self, const at::Tensor& other)
+{
+    TORCH_CHECK(self.device() == other.device(), "Cannot compare two tensors on different devices. Got: ", self.device(), " and ", other.device());
+    if (!self.sizes().equals(other.sizes())) return false;
+    if (self.numel() == 0) return true;
+    return sum_dim_vulkan(at::ne(self, other), at::OptionalIntArrayRef(), false, at::kLong).item<int64_t>() == 0;
+}
+
+// the float64 bit pattern of a float32 value, built with integer ops so no float64 arithmetic is needed
+at::Tensor float32_to_float64_bits(const at::Tensor& x)
+{
+    at::Tensor bits = x.contiguous().view(at::kInt).to(at::kLong);
+    at::Tensor sign = at::bitwise_and(bits, 0x80000000LL);
+    at::Tensor exponent = at::bitwise_and(at::bitwise_right_shift(bits, 23), 0xff);
+    at::Tensor mantissa = at::bitwise_and(bits, 0x7fffff);
+
+    at::Tensor normal = at::bitwise_or(at::bitwise_left_shift(at::add(exponent, 1023 - 127), 52), at::bitwise_left_shift(mantissa, 29));
+    at::Tensor special = at::bitwise_or(at::bitwise_left_shift(at::full_like(bits, 0x7ff), 52), at::bitwise_left_shift(mantissa, 29));
+
+    // a subnormal's leading bit p comes from the exponent of float(mantissa), which is exact below 2^24
+    at::Tensor lead = at::sub(at::bitwise_and(at::bitwise_right_shift(mantissa.to(at::kFloat).view(at::kInt).to(at::kLong), 23), 0xff), 127);
+    at::Tensor normalized = at::bitwise_and(at::bitwise_left_shift(mantissa, at::rsub(lead, 23)), 0x7fffff);
+    at::Tensor subnormal = at::bitwise_or(at::bitwise_left_shift(at::add(lead, 1023 - 149), 52), at::bitwise_left_shift(normalized, 29));
+
+    at::Tensor magnitude = at::where(at::eq(exponent, 0xff), special, normal);
+    magnitude = at::where(at::logical_and(at::eq(exponent, 0), at::ne(mantissa, 0)), subnormal, magnitude);
+    magnitude = at::where(at::logical_and(at::eq(exponent, 0), at::eq(mantissa, 0)), at::zeros_like(magnitude), magnitude);
+    return at::bitwise_or(magnitude, at::bitwise_left_shift(sign, 32));
+}
+
+// floats hash as their float64 pattern, integers sign-extended
+at::Tensor& hash_tensor_out_vulkan(const at::Tensor& self, at::IntArrayRef dim, bool keepdim, int64_t mode, at::Tensor& out)
+{
+    TORCH_CHECK(mode == 0, "hash_tensor only supports mode=0 (xor_sum)");
+    at::ScalarType dtype = self.scalar_type();
+    at::Tensor words;
+    if (dtype == at::kDouble) words = self.contiguous().view(at::kLong);
+    else if (at::isFloatingType(dtype)) words = float32_to_float64_bits(self.to(at::kFloat));
+    else words = self.to(at::kLong);
+
+    std::vector<int64_t> reduce_dims;
+    if (self.dim() == 0) {
+        // a 0-dim tensor hashes to its own word whatever dim names
+    } else if (dim.empty()) {
+        for (int64_t d = 0; d < self.dim(); d++) reduce_dims.push_back(d);
+    } else {
+        for (int64_t d : dim) reduce_dims.push_back(c10::maybe_wrap_dim(d, self.dim()));
+    }
+    std::vector<int64_t> keep_dims;
+    std::vector<int64_t> out_shape;
+    for (int64_t d = 0; d < self.dim(); d++) {
+        bool reduced = std::find(reduce_dims.begin(), reduce_dims.end(), d) != reduce_dims.end();
+        if (!reduced) keep_dims.push_back(d);
+        if (!reduced) out_shape.push_back(self.size(d));
+        else if (keepdim) out_shape.push_back(1);
+    }
+
+    std::vector<int64_t> order = keep_dims;
+    order.insert(order.end(), reduce_dims.begin(), reduce_dims.end());
+    int64_t kept = 1;
+    for (int64_t d : keep_dims) kept *= self.size(d);
+    int64_t reduced = 1;
+    for (int64_t d : reduce_dims) reduced *= self.size(d);
+    at::Tensor lines = words.dim() == 0 ? words.reshape({1, 1}) : words.permute(order).reshape({kept, reduced});
+
+    // an odd length gets a zero column, xor's identity
+    while (lines.size(1) > 1) {
+        int64_t n = lines.size(1);
+        if (n % 2 == 1) lines = at::cat({lines, at::zeros({kept, 1}, lines.options())}, 1);
+        int64_t half = lines.size(1) / 2;
+        lines = at::bitwise_xor(lines.narrow(1, 0, half), lines.narrow(1, half, half));
+    }
+    at::Tensor hashed = lines.size(1) == 0 ? at::zeros({kept}, lines.options()) : lines.reshape({kept});
+    return fill_out(out, hashed.view(at::kUInt64).reshape(out_shape));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -374,4 +553,21 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("mean", &mean_vulkan);
     m.impl("argmax.out", &argmax_out_vulkan);
     m.impl("argmin.out", &argmin_out_vulkan);
+    m.impl("any.out", &any_out_vulkan);
+    m.impl("any.all_out", &any_all_out_vulkan);
+    m.impl("all.out", &all_out_vulkan);
+    m.impl("all.all_out", &all_all_out_vulkan);
+    m.impl("count_nonzero.dim_IntList", &count_nonzero_vulkan);
+    m.impl("nansum", &nansum_vulkan);
+    m.impl("nansum.out", &nansum_out_vulkan);
+    m.impl("max", &max_vulkan);
+    m.impl("min", &min_vulkan);
+    m.impl("max.unary_out", &max_unary_out_vulkan);
+    m.impl("min.unary_out", &min_unary_out_vulkan);
+    m.impl("aminmax.out", &aminmax_out_vulkan);
+    m.impl("equal", &equal_vulkan);
+    m.impl("hash_tensor.out", &hash_tensor_out_vulkan);
+    m.impl("amax.out", &amax_out_vulkan);
+    m.impl("amin.out", &amin_out_vulkan);
+    m.impl("sum.IntList_out", &sum_out_vulkan);
 }

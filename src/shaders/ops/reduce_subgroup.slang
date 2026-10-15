@@ -43,14 +43,14 @@ public struct AmaxWaveOp<T : __BuiltinFloatingPointType> : IWaveReduceOp<T>
 {
     public static T identity() { return T.ext_lowest(); }
     public static T combine(T a, T b) { return T.ext_max(a, b); }
-    public static T wave_reduce(T a) { return WaveActiveMax(a); }
+    public static T wave_reduce(T a) { return WaveActiveAnyTrue(isnan(a)) ? WaveActiveSum(a) : WaveActiveMax(a); }
 }
 
 public struct AminWaveOp<T : __BuiltinFloatingPointType> : IWaveReduceOp<T>
 {
     public static T identity() { return T.ext_highest(); }
     public static T combine(T a, T b) { return T.ext_min(a, b); }
-    public static T wave_reduce(T a) { return WaveActiveMin(a); }
+    public static T wave_reduce(T a) { return WaveActiveAnyTrue(isnan(a)) ? WaveActiveSum(a) : WaveActiveMin(a); }
 }
 
 public void baseSubgroupReduceKernel<T : __BuiltinFloatingPointType, Op : IWaveReduceOp<T>>(

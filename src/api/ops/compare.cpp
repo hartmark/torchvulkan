@@ -251,6 +251,11 @@ at::Tensor& logical_xor_out_vulkan(const at::Tensor& self, const at::Tensor& oth
 
 at::Tensor& logical_not_out_vulkan(const at::Tensor& self, at::Tensor& out) { return compare_scalar_out_vulkan(self, at::Scalar(0), out, CompareOp::EQ); }
 
+at::Tensor& where_out_vulkan(const at::Tensor& condition, const at::Tensor& self, const at::Tensor& other, at::Tensor& out)
+{
+    return fill_out(out, where_vulkan(condition, self, other));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -274,4 +279,5 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("isposinf.out", &isposinf_out_vulkan);
     m.impl("isneginf.out", &isneginf_out_vulkan);
     m.impl("where.self", &where_vulkan);
+    m.impl("where.self_out", &where_out_vulkan);
 }

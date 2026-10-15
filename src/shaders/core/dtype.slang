@@ -54,6 +54,7 @@ public interface IDtypeOps
     static This ext_fmin(This a, This b);
     static This ext_fmod(This a, This b);
     static This ext_remainder(This a, This b);
+    static This ext_floor_divide(This a, This b);
     static bool ext_eq(This a, This b);
     static bool ext_ne(This a, This b);
     static bool ext_lt(This a, This b);
@@ -372,6 +373,28 @@ public extension<T : __BuiltinFloatingPointType> T : IDtypeOps
         return r;
     }
 
+    // as torch computes it: the quotient of a - fmod(a, b) rounded to the nearest whole number,
+    // with a zero quotient keeping the sign of a / b
+    public static T ext_floor_divide(T a, T b)
+    {
+        if (sizeof(T) < 4) return T(float.ext_floor_divide(a.toFloat(), b.toFloat()));
+        if (b == T(0)) return a / b;
+
+        T mod = ext_fmod(a, b);
+        T div = (a - mod) / b;
+        if (mod != T(0) && ((b < T(0)) != (mod < T(0)))) div = div - T(1);
+
+        if (div != T(0))
+        {
+            T floordiv = floor(div);
+            if (div - floordiv > T(0.5)) floordiv = floordiv + T(1);
+            return floordiv;
+        }
+        T q = a / b;
+        bool negative = q < T(0) || (q == T(0) && T(1) / q < T(0));
+        return negative ? -T(0) : T(0);
+    }
+
     public static bool ext_eq(T a, T b) { return a == b; }
     public static bool ext_ne(T a, T b) { return a != b; }
     public static bool ext_lt(T a, T b) { return a < b; }
@@ -623,7 +646,7 @@ public extension<T : __BuiltinFloatingPointType> T : IDtypeOps
     {
         float x0 = a.toFloat();
         const float PI = 3.14159265358979f;
-        if (x0 <= 0.0f && x0 == floor(x0)) { float zero = 0.0f; return T(x0 == 0.0f ? (-1.0f / zero) : (0.0f / zero)); }
+        if (x0 <= 0.0f && x0 == floor(x0)) return T(x0 == 0.0f ? asfloat(0xff800000u) : asfloat(0x7fc00000u));
 
         bool reflect = x0 < 0.5f;
         float x = reflect ? (1.0f - x0) : x0;
@@ -780,6 +803,15 @@ public extension<T : __BuiltinIntegerType> T : IDtypeOps
         return r;
     }
 
+    // truncation rounds toward zero, so a nonzero remainder with differing signs is one too high
+    public static T ext_floor_divide(T a, T b)
+    {
+        if (b == T(0)) return T(0);
+        T q = a / b;
+        if ((a < T(0)) != (b < T(0)) && a % b != T(0)) q -= T(1);
+        return q;
+    }
+
     public static bool ext_eq(T a, T b) { return a == b; }
     public static bool ext_ne(T a, T b) { return a != b; }
     public static bool ext_lt(T a, T b) { return a < b; }
@@ -867,6 +899,7 @@ public extension BFloat16 : IDtypeOps
     public static BFloat16 ext_fmin(BFloat16 a, BFloat16 b) { return BFloat16(float.ext_fmin(float(a), float(b))); }
     public static BFloat16 ext_fmod(BFloat16 a, BFloat16 b) { return BFloat16(float.ext_fmod(float(a), float(b))); }
     public static BFloat16 ext_remainder(BFloat16 a, BFloat16 b) { return BFloat16(float.ext_remainder(float(a), float(b))); }
+    public static BFloat16 ext_floor_divide(BFloat16 a, BFloat16 b) { return BFloat16(float.ext_floor_divide(float(a), float(b))); }
     public static bool ext_eq(BFloat16 a, BFloat16 b) { return float(a) == float(b); }
     public static bool ext_ne(BFloat16 a, BFloat16 b) { return float(a) != float(b); }
     public static bool ext_lt(BFloat16 a, BFloat16 b) { return float(a) < float(b); }

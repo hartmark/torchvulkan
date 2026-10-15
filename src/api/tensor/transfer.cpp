@@ -101,8 +101,27 @@ void copy_vulkan_to_host(at::Tensor src, const at::Tensor& dst)
     dst.copy_(staging);
 }
 
+void copy_complex_vulkan_to_vulkan(const at::Tensor& src, const at::Tensor& dst)
+{
+    if (src.is_complex() && dst.is_complex()) {
+        at::view_as_real(dst).copy_(at::view_as_real(src));
+    } else if (dst.is_complex()) {
+        at::Tensor pairs = at::view_as_real(dst);
+        pairs.select(-1, 0).copy_(src);
+        pairs.select(-1, 1).zero_();
+    } else {
+        dst.copy_(at::view_as_real(src).select(-1, 0));
+    }
+}
+
 void copy_vulkan_to_vulkan(const at::Tensor& src, const at::Tensor& dst)
 {
+    if (src.scalar_type() != dst.scalar_type() && (src.is_complex() || dst.is_complex()))
+    {
+        copy_complex_vulkan_to_vulkan(src, dst);
+        return;
+    }
+
     if (src.scalar_type() != dst.scalar_type())
     {
         if (!is_dtype_supported(src, src.scalar_type()) || !is_dtype_supported(src, dst.scalar_type())) {
@@ -136,8 +155,20 @@ at::Tensor torchvulkan::copy_vulkan(
     bool /* non_blocking */)
 {
     if (dst.numel() == 0) return dst;
-    TORCH_CHECK(!self.is_conj() && !self.is_neg(), "torchvulkan [NOT IMPLEMENTED]: Copying from a conjugated or negated source is not yet supported.");
     TORCH_CHECK(!dst.is_conj() && !dst.is_neg(), "torchvulkan [NOT IMPLEMENTED]: Copying into a conjugated or negated destination is not yet supported.");
+
+    // a lazily conjugated or negated source copies its stored values, then the copy applies the pending op
+    if (self.is_conj() || self.is_neg()) {
+        if (self.device().is_cpu()) return torchvulkan::copy_vulkan(self.resolve_conj().resolve_neg(), dst, false);
+        at::Tensor stored = self;
+        if (stored.is_conj()) stored = at::_conj(stored);
+        if (stored.is_neg()) stored = at::_neg_view(stored);
+        at::Tensor resolved = stored.clone();
+        at::Tensor pairs = resolved.is_complex() ? at::view_as_real(resolved) : resolved;
+        if (self.is_conj()) pairs.select(-1, 1).neg_();
+        if (self.is_neg()) pairs.neg_();
+        return torchvulkan::copy_vulkan(resolved, dst, false);
+    }
 
     at::Tensor src = (self.sizes() == dst.sizes()) ? self : self.expand(dst.sizes());
     bool src_vulkan = src.device().type() == c10::DeviceType::PrivateUse1;
