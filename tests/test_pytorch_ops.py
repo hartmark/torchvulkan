@@ -91,13 +91,30 @@ def describe(obj):
 def tensors_of(obj):
     return [t for t in tree_flatten(obj)[0] if isinstance(t, torch.Tensor)]
 
-MATMUL_OPS = ("bmm", "baddbmm", "mm", "addmm", "matmul", "__rmatmul__")
+MATMUL_OPS = ("bmm", "baddbmm", "mm", "addmm", "addbmm", "matmul", "__rmatmul__")
+
+# convolutions run on the GPU matmul tile, so they accumulate in its order
+CONV_OPS = ("nn.functional.conv1d", "nn.functional.conv2d", "nn.functional.conv3d", "nn.functional.conv_transpose1d",
+            "nn.functional.conv_transpose2d", "nn.functional.conv_transpose3d")
+
+# low-precision ops whose CPU reference computes in the input dtype and is less accurate than the float32 the
+# GPU computes in (matrix_exp's half and bfloat16 powers overflow to nan), so they are compared against a float32
+# reference instead
+FLOAT32_REFERENCE_OPS = ("grid_sampler_2d", "grid_sampler_3d", "nn.functional.grid_sample", "matrix_exp")
+
+# decompositions and solvers whose float32 results depend on the order of their eliminations
+LINALG_OPS = ("lu", "lu_solve", "lu_unpack", "ormqr", "cholesky_solve", "cholesky_inverse", "triangular_solve",
+              "matrix_exp", "logdet", "det", "inverse", "pinverse", "geqrf")
 
 def tie_order_dim(op_name, args, kwargs):
     """
-    The dim for ops whose order of equal keys is unspecified (sort/argsort without stable=True, topk), where
-    the CPU's own order is arbitrary, or None for every other op.
+    The dim for ops whose order of equal keys is unspecified (sort/argsort without stable=True, topk, and
+    which occurrence mode and kthvalue report), where the CPU's own order is arbitrary, or None for every other op.
     """
+    if op_name == "mode":
+        return kwargs.get("dim", args[0] if len(args) > 0 else -1)
+    if op_name == "kthvalue":
+        return kwargs.get("dim", args[1] if len(args) > 1 else -1)
     if op_name in ("sort", "argsort"):
         if kwargs.get("stable", False):
             return None
@@ -106,7 +123,52 @@ def tie_order_dim(op_name, args, kwargs):
         return kwargs.get("dim", args[1] if len(args) > 1 else -1)
     return None
 
+# decompositions whose vectors are only defined up to sign (or phase) and, for eig, order: LAPACK's choice is
+# arbitrary, so their values are compared and their vectors checked by what they must satisfy
+DECOMPOSITION_OPS = ("svd", "linalg.svd", "linalg.eigh", "linalg.eig", "linalg.eigvals")
+
+def sorted_eigenvalues(values):
+    """complex eigenvalues in a canonical order: by real part, then imaginary part"""
+    values = values.to(torch.complex128)
+    keys = values.real * 1e6 + values.imag
+    return values.gather(-1, keys.argsort(-1))
+
+def check_decomposition(case, op_name, input, args, kwargs, actual, expected, atol, rtol):
+    if op_name == "linalg.eigvals":
+        case.assertEqual(sorted_eigenvalues(actual), sorted_eigenvalues(expected), atol=atol, rtol=rtol)
+        return
+    if op_name == "linalg.eig":
+        values, vectors = actual
+        case.assertEqual(sorted_eigenvalues(values), sorted_eigenvalues(expected[0]), atol=atol, rtol=rtol)
+        a = input.to(vectors.dtype)
+        case.assertEqual(a @ vectors, vectors * values.unsqueeze(-2), atol=atol * 10, rtol=rtol * 10)
+        case.assertEqual(torch.linalg.vector_norm(vectors, dim=-2), torch.ones(values.shape, dtype=torch.float64), atol=atol, rtol=rtol, exact_dtype=False)
+        return
+    if op_name == "linalg.eigh":
+        values, vectors = actual
+        case.assertEqual(values, expected[0], atol=atol, rtol=rtol)
+        uplo = kwargs.get("UPLO", args[0] if len(args) > 0 else "L")
+        a = input.tril() + input.tril(-1).mT if uplo.upper() == "L" else input.triu() + input.triu(1).mT
+        case.assertEqual((vectors * values.unsqueeze(-2)) @ vectors.mT, a, atol=atol * 10, rtol=rtol * 10)
+        return
+    # svd and linalg.svd: U, S, and Vh (linalg.svd) or V (svd)
+    u, s, third = actual
+    case.assertEqual(s, expected[1], atol=atol, rtol=rtol)
+    if u.numel() == 0 or (op_name == "svd" and not kwargs.get("compute_uv", args[1] if len(args) > 1 else True)):
+        return
+    k = s.shape[-1]
+    vh = third.mT if op_name == "svd" else third
+    reconstructed = (u[..., :, :k] * s.unsqueeze(-2)) @ vh[..., :k, :]
+    case.assertEqual(reconstructed, input, atol=atol * 10, rtol=rtol * 10)
+    case.assertEqual(u.mT @ u, torch.eye(u.shape[-1], dtype=u.dtype).expand(u.mT.shape[:-2] + (u.shape[-1], u.shape[-1])), atol=atol * 10, rtol=rtol * 10)
+
 class TestVulkanOps(TestCase):
+
+    # MoltenVK's per-dispatch cost grows with every live buffer, cached ones included, so the cache each test
+    # leaves behind would slow every later test
+    def tearDown(self):
+        super().tearDown()
+        torchvk.empty_cache()
 
     @ops(op_db, allowed_dtypes=VULKAN_DTYPES)
     def test_correctness(self, device, dtype, op):
@@ -161,6 +223,10 @@ class TestVulkanOps(TestCase):
             if (op.name == "nn.functional.soft_margin_loss" and dtype == torch.float16):
                 continue
 
+            if op.name in FLOAT32_REFERENCE_OPS and dtype in (torch.float16, torch.bfloat16):
+                upcast = lambda x: x.float() if isinstance(x, torch.Tensor) and x.is_floating_point() else x
+                cpu_input, cpu_args = upcast(cpu_input), tuple(upcast(a) for a in cpu_args)
+
             detector = SeededOpDetector()
             cpu_error = None
             try:
@@ -213,7 +279,16 @@ class TestVulkanOps(TestCase):
                 else:
                     (actual_values, actual_indices), (expected_values, _) = actual, expected
                     self.assertEqual(actual_values, expected_values)
+                # mode and kthvalue reduce the dim away unless keepdim is set
+                if op.name in ("mode", "kthvalue") and actual_indices.dim() < cpu_input.dim():
+                    actual_indices = actual_indices.unsqueeze(tie_dim)
+                    expected_values = expected_values.unsqueeze(tie_dim)
                 self.assertEqual(cpu_input.gather(tie_dim, actual_indices), expected_values)
+                continue
+
+            if op.name in DECOMPOSITION_OPS and isinstance(cpu_input, torch.Tensor):
+                tolerance = 1e-3 if dtype == torch.float64 else 1e-4
+                check_decomposition(self, op.name, cpu_input, cpu_args, cpu_kwargs, actual, expected, atol=tolerance, rtol=tolerance * 10)
                 continue
 
             # uninitialised memory cannot be compared
@@ -222,7 +297,18 @@ class TestVulkanOps(TestCase):
                 self.assertEqual(actual.dtype, expected.dtype)
                 continue
 
-            elif dtype in (torch.float16, torch.bfloat16) and op.name in MATMUL_OPS + (
+            # the CPU truncates a low-precision quotient in float32 when the divisor is a broadcast scalar, and rounds
+            # it to the dtype first otherwise, so a quotient just under an integer can go either way
+            elif op.name == "div" and op.variant_test_name == "trunc_rounding" and dtype in (torch.float16, torch.bfloat16):
+                self.assertEqual(actual, expected, atol=1, rtol=0)
+                continue
+
+            elif op.name in FLOAT32_REFERENCE_OPS and dtype in (torch.float16, torch.bfloat16):
+                rounded = tree_map(lambda x: x.to(dtype) if isinstance(x, torch.Tensor) and x.is_floating_point() else x, expected)
+                self.assertEqual(actual, rounded, atol=1e-2, rtol=1e-2)
+                continue
+
+            elif dtype in (torch.float16, torch.bfloat16) and op.name in MATMUL_OPS + CONV_OPS + (
                 "linalg.multi_dot", "nn.functional.embedding_bag",
             ):
                 self.assertEqual(actual, expected, atol=1e-1, rtol=3e-1)
@@ -230,11 +316,16 @@ class TestVulkanOps(TestCase):
 
             # GPU matmul accumulates in a different order than the CPU reference;
             # the same holds for composite ops that decompose into matmuls.
-            elif dtype == torch.float32 and op.name in MATMUL_OPS + (
+            elif dtype == torch.float32 and op.name in MATMUL_OPS + CONV_OPS + LINALG_OPS + (
                 "nn.functional.multi_head_attention_forward",
-                "nn.functional.scaled_dot_product_attention", "pca_lowrank",
-            ):
+                "nn.functional.scaled_dot_product_attention", "pca_lowrank", "_upsample_bilinear2d_aa",
+            ) or (dtype == torch.float32 and op.name.startswith("linalg.")):
                 self.assertEqual(actual, expected, atol=1e-4, rtol=1e-3)
+                continue
+
+            # FFTs sum in butterfly order with float32 twiddles, whatever the input dtype
+            elif op.name.startswith("fft.") and dtype != torch.float64:
+                self.assertEqual(actual, expected, atol=1e-4, rtol=1e-4, exact_dtype=False)
                 continue
 
             # fused operations lose precision on rounding
@@ -245,6 +336,11 @@ class TestVulkanOps(TestCase):
                 "nn.functional.bilinear", "nn.functional.poisson_nll_loss",
                 "var", "var_mean", "nn.functional.binary_cross_entropy",
                 "nn.functional.cross_entropy", "nn.functional.linear_cross_entropy",
+                # interpolation and pooling, where the CPU's vectorized sums round in a different order
+                "nn.functional.interpolate", "nn.functional.upsample_bilinear", "_upsample_bilinear2d_aa",
+                "nn.functional.adaptive_avg_pool1d", "nn.functional.adaptive_avg_pool2d", "nn.functional.adaptive_avg_pool3d",
+                "nn.functional.avg_pool1d", "nn.functional.avg_pool2d", "nn.functional.avg_pool3d",
+                "native_batch_norm", "_native_batch_norm_legit", "_batch_norm_with_update", "nn.functional.batch_norm",
             ):
                 self.assertEqual(actual, expected, atol=1e-1, rtol=5e-2, exact_dtype=False)
                 continue
@@ -271,7 +367,7 @@ class TestVulkanOps(TestCase):
 
             # special functions use float32 polynomial/rational approximations; the Bessel and
             # gamma families lose accuracy for large arguments even in float32
-            elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma"):
+            elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma", "special.polygamma"):
                 self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
                 continue
 
@@ -352,6 +448,8 @@ class TestVulkanOps(TestCase):
             def grads_of(fn_args, leaves):
                 with SeededOpDetector() as detector:
                     out = op(*fn_args[0], **fn_args[1])
+                # makes outputs defined only up to sign or phase, like singular vectors, comparable
+                out = sample.output_process_fn_grad(out)
                 outputs = [o for o in tensors_of(out) if o.requires_grad and o.is_floating_point()]
                 if not outputs or detector.seeded:
                     return None
@@ -394,7 +492,7 @@ class TestVulkanOps(TestCase):
                     self.assertEqual(a.cpu(), e, atol=1e-3, rtol=2e-2)
                 elif op.name in ("acos", "asin", "tan"):
                     self.assertEqual(a.cpu(), e, atol=1e-3, rtol=1e-2)
-                elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma"):
+                elif op.name in ("i0", "special.i1", "special.i0e", "special.i1e", "lgamma", "digamma", "erfinv", "mvlgamma", "polygamma", "special.polygamma"):
                     self.assertEqual(a.cpu(), e, atol=1e-2, rtol=1e-2)
                 # with few observations and a large correction, cov divides rounding error by ~1
                 elif op.name in ("cov", "corrcoef"):
