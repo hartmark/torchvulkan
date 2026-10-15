@@ -143,6 +143,9 @@ KERNELS = [
     Kernel('searchsorted', 'ops/searchsorted.slang', [
         Entry('searchsorted_main', DTYPES),
     ]),
+    Kernel('pool', 'ops/pool.slang', [
+        Entry('pool_main', DTYPES),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
