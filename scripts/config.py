@@ -191,6 +191,12 @@ KERNELS = [
     Kernel('matmul_simd_64', 'ops/matmul_simd.slang', [
         Entry('matmul_simd_main', DTYPES, ('vec',), constants=(64,)),
     ]),
+    Kernel('conv_128', 'ops/conv.slang', [
+        Entry('conv_main', [d for d in FLOATS if d.bytes < 8], ('vec',), constants=(128,)),
+    ]),
+    Kernel('conv_64', 'ops/conv.slang', [
+        Entry('conv_main', FLOATS, ('vec',), constants=(64,)),
+    ]),
     Kernel('matmul_coop_8', 'ops/matmul_coop.slang', [
         Entry('matmul_coop_main', DTYPES, ('vec',), constants=(8,)),
     ]),
