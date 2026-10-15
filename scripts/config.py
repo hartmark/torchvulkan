@@ -152,6 +152,9 @@ KERNELS = [
     Kernel('resample_u8', 'ops/resample_u8.slang', [
         Entry('resample_u8_main', [U8]),
     ]),
+    Kernel('grid_sample', 'ops/grid_sample.slang', [
+        Entry('grid_sample_main', [F64, F32]),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
