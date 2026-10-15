@@ -117,7 +117,7 @@ at::Tensor& gather_out_vulkan(const at::Tensor& self, int64_t dim, const at::Ten
     }
 
     at::Tensor result = out.dim() == 0 ? out.view({1}) : out;
-    if (src.size(dim) == 0 || !is_dtype_supported(self, self.scalar_type()) ||
+    if (src.size(dim) == 0 || !is_dtype_copyable(self, self.scalar_type()) ||
         !dispatch_index_gather_shader(result, restride_for_dim(src, dim, idx.sizes()), {idx}, {src.size(dim)}, {src.stride(dim)}, false))
     {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: This gather can't run on the Vulkan device. Falling back to CPU.");
@@ -147,7 +147,7 @@ at::Tensor index_select_vulkan(const at::Tensor& self, int64_t dim, const at::Te
     index_view[dim] = count;
     at::Tensor idx = index.to(at::kLong).reshape(index_view).expand(out_sizes);
 
-    if (self.size(dim) == 0 || !is_dtype_supported(self, self.scalar_type()) ||
+    if (self.size(dim) == 0 || !is_dtype_copyable(self, self.scalar_type()) ||
         !dispatch_index_gather_shader(out, restride_for_dim(self, dim, out_sizes), {idx}, {self.size(dim)}, {self.stride(dim)}, false))
     {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: This index_select can't run on the Vulkan device. Falling back to CPU.");
@@ -226,7 +226,7 @@ at::Tensor& index_out_vulkan(const at::Tensor& self, const c10::List<std::option
     if (out.sizes() != plan.src.sizes()) out.resize_(plan.src.sizes());
     if (out.numel() == 0) return out;
 
-    if (!is_dtype_supported(self, self.scalar_type()) ||
+    if (!is_dtype_copyable(self, self.scalar_type()) ||
         !dispatch_index_gather_shader(out, plan.src, plan.indices, plan.index_sizes, plan.index_strides, /*wrap_negative=*/true))
     {
         TORCH_WARN_ONCE("torchvulkan [WARNING]: This index can't run on the Vulkan device. Falling back to CPU.");

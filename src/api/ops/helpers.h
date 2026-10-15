@@ -76,6 +76,12 @@ inline c10::ScalarType get_dtype_width_variant(c10::ScalarType dtype)
     }
 }
 
+// copy-only kernels move bytes, so a dtype is usable when its byte-width variant is (complex128 has its own)
+inline bool is_dtype_copyable(const at::Tensor& on, c10::ScalarType dtype)
+{
+    return c10::elementSize(dtype) == 16 || is_dtype_supported(on, get_dtype_width_variant(dtype));
+}
+
 // set by scripts/config.py, which compiles the shaders with the same table
 inline int get_dtype_vec_size(at::ScalarType dtype) 
 {
