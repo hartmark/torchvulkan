@@ -95,6 +95,9 @@ KERNELS = [
     Kernel('compare', 'ops/compare.slang', [
         Entry('compare_main', DTYPES, ('vec',)),
     ]),
+    Kernel('integer_binary', 'ops/integer_binary.slang', [
+        Entry('integer_binary_main', INTEGERS),
+    ]),
     Kernel('fill', 'ops/fill.slang', [
         Entry('fill_main', DTYPES, ('vec',)),
     ]),
