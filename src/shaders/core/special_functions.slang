@@ -22,6 +22,19 @@ float signedPow(float base, float exponent)
     return (fmod(abs(exponent), 2.0f) == 1.0f) ? -r : r;
 }
 
+// sin of the float32 product pi * x, as the CPU's sinf sees it. Near a multiple of pi the product's residual is
+// ~1e-7, which a fast-math GPU sin can round to 0, so the residual comes from an fma against float pi and its error
+float sinPiProduct(float x)
+{
+    const float PI = 3.14159265358979323846f;
+    const float PI_ERROR = 8.742278e-8f;
+    float v = PI * x;
+    float k = round(v * 0.318309886183790671538f);
+    float r = fma(-PI, k, v) + k * PI_ERROR;
+    float s = abs(r) < 1e-3f ? r : sin(r);
+    return fmod(abs(k), 2.0f) == 1.0f ? -s : s;
+}
+
 public float trigamma(float x)
 {
     float sign = 1;
@@ -29,7 +42,8 @@ public float trigamma(float x)
     if (x < 0.5f)
     {
         sign = -1;
-        float sin_pi_x = sin(3.14159265358979323846f * x);
+        float sin_pi_x = sinPiProduct(x);
+        if (sin_pi_x == 0.0f) return _inf();
         result -= (3.14159265358979323846f * 3.14159265358979323846f) / (sin_pi_x * sin_pi_x);
         x = 1 - x;
     }

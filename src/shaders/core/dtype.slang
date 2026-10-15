@@ -646,7 +646,7 @@ public extension<T : __BuiltinFloatingPointType> T : IDtypeOps
     {
         float x0 = a.toFloat();
         const float PI = 3.14159265358979f;
-        if (x0 <= 0.0f && x0 == floor(x0)) { float zero = 0.0f; return T(x0 == 0.0f ? (-1.0f / zero) : (0.0f / zero)); }
+        if (x0 <= 0.0f && x0 == floor(x0)) return T(x0 == 0.0f ? asfloat(0xff800000u) : asfloat(0x7fc00000u));
 
         bool reflect = x0 < 0.5f;
         float x = reflect ? (1.0f - x0) : x0;
