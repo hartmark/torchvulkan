@@ -167,7 +167,7 @@ at::Tensor torchvulkan::divide_vulkan(const at::Tensor& self, const at::Tensor& 
     at::Tensor self_vulkan = self;
     at::Tensor other_vulkan = other;
 
-    if (!self.is_floating_point() && !other.is_floating_point()) {
+    if (!self.is_floating_point() && !other.is_floating_point() && !self.is_complex() && !other.is_complex()) {
         self_vulkan = self.to(c10::kFloat);
         other_vulkan = other.to(c10::kFloat);
     }
@@ -234,7 +234,7 @@ at::Tensor atan2_vulkan(const at::Tensor& self, const at::Tensor& other) {
     at::Tensor self_vulkan = self;
     at::Tensor other_vulkan = other;
 
-    if (!self.is_floating_point() && !other.is_floating_point()) {
+    if (!self.is_floating_point() && !other.is_floating_point() && !self.is_complex() && !other.is_complex()) {
         self_vulkan = self.to(c10::kFloat);
         other_vulkan = other.to(c10::kFloat);
     }
