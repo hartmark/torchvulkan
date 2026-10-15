@@ -140,6 +140,9 @@ KERNELS = [
     Kernel('scatter', 'ops/scatter.slang', [
         Entry('scatter_main', DTYPES),
     ]),
+    Kernel('searchsorted', 'ops/searchsorted.slang', [
+        Entry('searchsorted_main', DTYPES),
+    ]),
     Kernel('cast', 'ops/cast.slang', [
         Entry('cast_main', DTYPES, ('vec',), pairwise=True),
     ]),
