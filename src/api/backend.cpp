@@ -57,6 +57,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         for (DeviceContext* device : VulkanContext::Instance().devices) device->shader_manager->savePipelineCache();
     });
 
+    m.def("_amp_supported_dtypes", [](int64_t device_index) {
+        DeviceContext* device = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        std::vector<py::object> dtypes;
+        if (device->support_float16) dtypes.push_back(py::reinterpret_borrow<py::object>(reinterpret_cast<PyObject*>(torch::getTHPDtype(at::kHalf))));
+        if (device->support_bfloat16) dtypes.push_back(py::reinterpret_borrow<py::object>(reinterpret_cast<PyObject*>(torch::getTHPDtype(at::kBFloat16))));
+        return dtypes;
+    });
+
     m.def("_memory_usage", [](int64_t device_index) -> uint64_t {
         return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->memoryUsage();
     });

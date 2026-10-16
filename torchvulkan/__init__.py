@@ -80,6 +80,9 @@ def set_rng_state_all(new_states) -> None:
     for index, state in enumerate(new_states):
         set_rng_state(state, index)
 
+def get_amp_supported_dtype() -> list:
+    return _C._amp_supported_dtypes(current_device())
+
 def _is_in_bad_fork() -> bool:
     return _C._is_in_bad_fork()
 
