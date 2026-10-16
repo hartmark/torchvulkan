@@ -32,7 +32,7 @@ public void argReduceKernel<T : ITorchVulkan>(
     uint reduce_stride,
     uint reduce_size)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= num_lines || reduce_size == 0) return;
 
     T* tensor_in = (T*)address_in;

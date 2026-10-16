@@ -19,6 +19,9 @@
 struct DeviceContext;
 class VulkanBuffer;
 
+// largest power of two under the maximum vulkan workgroup size of 65535 (must match indexing.slang)
+constexpr uint32_t GROUP_ROW = 32768;
+
 struct ShaderKey {
     torchvulkan::Kernel kernel;
     c10::ScalarType dtype;

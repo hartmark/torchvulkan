@@ -30,7 +30,7 @@ public void baseUnaryKernel<T : ITorchVulkan, Op : IUnaryOp<T>, let VEC_SIZE : i
     uint64_t address_metadata,
     uint64_t numel)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
 
     if (IS_CONTIG != 0)
     {

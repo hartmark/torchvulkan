@@ -67,7 +67,7 @@ float evalSpecial(float a, float b)
 
 public void specialKernel<T : ITorchVulkan>(uint3 gi, SpecialPushConstants pcs)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= pcs.numel) return;
 
     T* tensor_a = (T*)pcs.tensor_a;

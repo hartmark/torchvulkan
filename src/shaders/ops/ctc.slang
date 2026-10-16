@@ -1,5 +1,7 @@
 module ctc;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint WG_x = 0;
 
@@ -197,7 +199,9 @@ void ctc_main<T : __BuiltinFloatingPointType>(
     uint3 gi : SV_DispatchThreadID,
     uniform CtcPushConstants pcs)
 {
-    if (MODE == 0) alphaKernel<T>(group.x, thread.x, pcs);
-    else if (MODE == 1) betaKernel<T>(group.x, thread.x, pcs);
-    else gradKernel<T>(uint64_t(gi.x), pcs);
+    uint b = flat_group(group);
+    if (MODE != 2 && b >= pcs.batch) return;
+    if (MODE == 0) alphaKernel<T>(b, thread.x, pcs);
+    else if (MODE == 1) betaKernel<T>(b, thread.x, pcs);
+    else gradKernel<T>(uint64_t(flat_thread(gi, WG_x)), pcs);
 }

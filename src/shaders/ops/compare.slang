@@ -52,7 +52,7 @@ public void baseCompareKernel<T : ITorchVulkan, Op : ICompareOp<T>, let VEC_SIZE
     uint64_t numel,
     T scalar_value)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
 
     if (IS_CONTIG != 0)
     {

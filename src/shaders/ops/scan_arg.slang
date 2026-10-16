@@ -136,7 +136,7 @@ void scan_arg_main<T : ITorchVulkan>(
     static groupshared uint smem_idx[SCAN_ARG_SMEM_SIZE];
 
     scanArgKernel<T, SCAN_ARG_SMEM_SIZE>(
-        group_id.x, group_thread_id.x, smem_val, smem_idx,
+        flat_group(group_id), group_thread_id.x, smem_val, smem_idx,
         pcs.tensor_in, pcs.tensor_val, pcs.tensor_idx, pcs.metadata,
         pcs.num_lines, pcs.scan_size, pcs.scan_stride_in, pcs.scan_stride_out
     );

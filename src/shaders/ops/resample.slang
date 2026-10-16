@@ -1,5 +1,7 @@
 module resample;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint BACKWARD = 0;
 [[vk::constant_id(2)]] public const uint ALIGN_CORNERS = 0;
@@ -154,7 +156,7 @@ Taps<T> computeTaps<T : __BuiltinFloatingPointType>(int o, int in_length, int ou
 
 void resampleKernel<T : __BuiltinFloatingPointType>(uint3 gi, ResamplePushConstants<T> pcs)
 {
-    uint64_t idx = uint64_t(gi.x);
+    uint64_t idx = uint64_t(flat_thread(gi, WG_x));
     if (idx >= pcs.count) return;
 
     T* input = (T*)pcs.input;

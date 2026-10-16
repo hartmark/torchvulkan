@@ -34,7 +34,7 @@ public void whereKernel<T>(
     uint64_t address_metadata,
     uint64_t numel)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= numel) return;
 
     uint8_t* tensor_cond = (uint8_t*)address_cond;

@@ -1,6 +1,7 @@
 module nllloss;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint WG_x = 0;
@@ -71,9 +72,9 @@ public void dispatchNllLoss<T : ITorchVulkan>(uint3 gi, NllLossPushConstants pcs
 
     switch (MODE)
     {
-    case 0: ForwardGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
-    case 1: BackwardScatterOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
-    case 2: WeightGatherOp.apply<T>(gi.x, tensor_in, target, tensor_out, pcs); break;
+    case 0: ForwardGatherOp.apply<T>(flat_thread(gi, WG_x), tensor_in, target, tensor_out, pcs); break;
+    case 1: BackwardScatterOp.apply<T>(flat_thread(gi, WG_x), tensor_in, target, tensor_out, pcs); break;
+    case 2: WeightGatherOp.apply<T>(flat_thread(gi, WG_x), tensor_in, target, tensor_out, pcs); break;
     default: break;
     }
 }

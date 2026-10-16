@@ -124,6 +124,10 @@ void VulkanShaderManager::dispatchShader(
     uint32_t groupX, uint32_t groupY, uint32_t groupZ)
 {
     const VkPhysicalDeviceLimits& limits = device->properties.limits;
+    if (groupX > limits.maxComputeWorkGroupCount[0] && groupY == 1 && groupZ == 1) {
+        groupY = (groupX + GROUP_ROW - 1) / GROUP_ROW;
+        groupX = GROUP_ROW;
+    }
     TORCH_CHECK(groupX <= limits.maxComputeWorkGroupCount[0] && groupY <= limits.maxComputeWorkGroupCount[1] && groupZ <= limits.maxComputeWorkGroupCount[2],
         "torchvulkan [ERROR]: ", torchvulkan::KERNEL_NAMES[static_cast<size_t>(key.kernel)], " needs ", groupX, " x ", groupY, " x ", groupZ,
         " workgroups, but the device allows at most ", limits.maxComputeWorkGroupCount[0], " x ", limits.maxComputeWorkGroupCount[1], " x ",

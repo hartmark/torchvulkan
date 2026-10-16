@@ -1,5 +1,18 @@
 module indexing;
 
+// largest power of two under the maximum vulkan workgroup size of 65535
+public static const uint GROUP_ROW = 32768;
+
+public uint flat_group(uint3 group)
+{
+    return group.y * GROUP_ROW + group.x;
+}
+
+public uint flat_thread(uint3 gi, uint workgroupSize)
+{
+    return gi.y * GROUP_ROW * workgroupSize + gi.x;
+}
+
 /*
 Turns a linear element index into coordinates, one dimension at a time:
 

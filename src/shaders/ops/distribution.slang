@@ -1,6 +1,7 @@
 module distribution;
 
 __exported import core.philox;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint OP_TYPE = 0;
 [[vk::constant_id(1)]] public const uint WG_x = 0;
@@ -213,7 +214,7 @@ public void baseDistributionKernel<T : IRandomDtype, Op : IDistributionOp<T.Real
 {
     typealias R = T.Real;
 
-    uint index = gi.x;
+    uint index = flat_thread(gi, WG_x);
     if (index >= pcs.numel) return;
 
     var stream = RandomStream<R>(pcs.seed, pcs.offset, index);

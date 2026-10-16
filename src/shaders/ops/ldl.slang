@@ -1,5 +1,7 @@
 module ldl;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint WG_x = 0;
 
@@ -245,7 +247,7 @@ void ldl_main<T : __BuiltinFloatingPointType>(
     uint3 gi : SV_DispatchThreadID,
     uniform LdlPushConstants pcs)
 {
-    uint64_t idx = uint64_t(gi.x);
+    uint64_t idx = uint64_t(flat_thread(gi, WG_x));
     if (idx >= pcs.count) return;
     if (MODE == 0) factor<T>(int64_t(idx), pcs);
     else solve<T>(int64_t(idx) / int64_t(pcs.k), int(int64_t(idx) % int64_t(pcs.k)), pcs);

@@ -1,5 +1,7 @@
 module fft;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint INVERSE = 0;
 [[vk::constant_id(2)]] public const uint WG_x = 0;
@@ -110,5 +112,5 @@ void fft_main<T : __BuiltinFloatingPointType>(
     uint3 gi : SV_DispatchThreadID,
     uniform FftPushConstants pcs)
 {
-    fftKernel<T>(uint64_t(gi.x), pcs);
+    fftKernel<T>(uint64_t(flat_thread(gi, WG_x)), pcs);
 }

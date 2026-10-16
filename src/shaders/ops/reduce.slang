@@ -46,7 +46,7 @@ public void baseReduceKernel<T : ITorchVulkan, Op : IReduceOp<T>>(
     uint split,
     uint chunk)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (uint64_t(idx) >= numel_out * split) return;
 
     uint out_idx = idx / split;

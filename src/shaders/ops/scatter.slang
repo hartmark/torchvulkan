@@ -1,6 +1,7 @@
 module scatter;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint INCLUDE_SELF = 0;
@@ -55,7 +56,7 @@ T identity<T : ITorchVulkan>()
 
 public void scatterKernel<T : ITorchVulkan>(uint3 gi, ScatterPushConstants pcs)
 {
-    uint64_t i = uint64_t(gi.x);
+    uint64_t i = uint64_t(flat_thread(gi, WG_x));
     if (i >= pcs.count) return;
 
     T* out = (T*)pcs.out;

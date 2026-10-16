@@ -28,7 +28,7 @@ public void fillKernel<T, let VEC_SIZE : int>(
     uint64_t numel,
     T fill_value)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     T* tensor = (T*)address;
 
     if (IS_CONTIG == 1)

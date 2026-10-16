@@ -1,6 +1,7 @@
 module resample_u8;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint WG_x = 0;
 
@@ -49,5 +50,5 @@ void resample_u8_main<T : ITorchVulkan>(
     uint3 gi : SV_DispatchThreadID,
     uniform ResampleU8PushConstants pcs)
 {
-    resampleU8Kernel<T>(uint64_t(gi.x), pcs);
+    resampleU8Kernel<T>(uint64_t(flat_thread(gi, WG_x)), pcs);
 }

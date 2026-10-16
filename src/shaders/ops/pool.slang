@@ -1,6 +1,7 @@
 module pool;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint WG_x = 0;
@@ -273,7 +274,7 @@ void poolBackward<T : ITorchVulkan>(uint64_t idx, PoolPushConstants pcs, Geometr
 
 void poolKernel<T : ITorchVulkan>(uint3 gi, PoolPushConstants pcs)
 {
-    uint64_t idx = uint64_t(gi.x);
+    uint64_t idx = uint64_t(flat_thread(gi, WG_x));
     if (idx >= pcs.count) return;
     Geometry g = loadGeometry(pcs.metadata);
     if (MODE == 5 || MODE == 6) poolBackward<T>(idx, pcs, g);
