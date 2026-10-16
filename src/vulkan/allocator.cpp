@@ -11,7 +11,9 @@ c10::DataPtr VulkanAllocator::allocate(size_t nbytes)
     c10::Device device(c10::DeviceType::PrivateUse1, VulkanContext::CurrentDevice());
     if (nbytes == 0) return {nullptr, nullptr, &VulkanAllocator::deleter, device};
 
-    VulkanBuffer* buffer = allocateBuffer(VulkanContext::Instance().CurrentDeviceContext(), nbytes, MemoryUsage::DEVICE_ONLY);
+    DeviceContext* context = VulkanContext::Instance().CurrentDeviceContext();
+    VulkanBuffer* buffer = allocateBuffer(context, nbytes, MemoryUsage::DEVICE_ONLY);
+    context->recordAllocation(buffer->size());
     return {buffer, buffer, &VulkanAllocator::deleter, device};
 }
 
@@ -19,6 +21,7 @@ void VulkanAllocator::deleter(void* ptr)
 {
     if (ptr == nullptr || VulkanContext::IsInBadFork()) return;
     VulkanBuffer* buffer = static_cast<VulkanBuffer*>(ptr);
+    buffer->owner()->recordFree(buffer->size());
     buffer->owner()->cache.deleteBuffer(buffer);
 }
 

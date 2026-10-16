@@ -69,6 +69,41 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->memoryUsage();
     });
 
+    m.def("_memory_allocated", [](int64_t device_index) -> uint64_t {
+        return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->allocated_bytes.load();
+    });
+
+    m.def("_max_memory_allocated", [](int64_t device_index) -> uint64_t {
+        return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->peak_allocated_bytes.load();
+    });
+
+    m.def("_reset_peak_memory_stats", [](int64_t device_index) {
+        DeviceContext* device = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        device->peak_allocated_bytes.store(device->allocated_bytes.load());
+    });
+
+    m.def("_is_initialized", []() -> bool {
+        return VulkanContext::IsInitialized();
+    });
+
+    m.def("_lazy_init", []() {
+        VulkanContext::Instance();
+    });
+
+    m.def("_device_properties", [](int64_t device_index) {
+        DeviceContext* device = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        const VkPhysicalDeviceProperties& props = device->properties;
+        py::dict info;
+        info["name"] = std::string(props.deviceName);
+        info["total_memory"] = device->memoryTotal();
+        info["vendor_id"] = props.vendorID;
+        info["device_id"] = props.deviceID;
+        info["api_version"] = std::to_string(VK_API_VERSION_MAJOR(props.apiVersion)) + "." + std::to_string(VK_API_VERSION_MINOR(props.apiVersion)) + "." + std::to_string(VK_API_VERSION_PATCH(props.apiVersion));
+        info["driver_version"] = props.driverVersion;
+        info["subgroup_size"] = device->subgroup_size;
+        return info;
+    });
+
     m.def("_validation_error_count", []() -> uint64_t {
         return VulkanContext::ValidationErrorCount();
     });

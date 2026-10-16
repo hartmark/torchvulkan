@@ -3,6 +3,8 @@
 #include <c10/core/Device.h>
 #include <volk.h>
 
+#include <atomic>
+
 #include "vk_mem_alloc.h"
 #include "cache.h"
 
@@ -43,6 +45,9 @@ struct DeviceContext {
     bool support_memory_budget = false;
     uint32_t subgroup_size = 0;
 
+    std::atomic<size_t> allocated_bytes{0};
+    std::atomic<size_t> peak_allocated_bytes{0};
+
     DeviceContext() { cache.setOwner(this); }
     DeviceContext(const DeviceContext&) = delete;
     DeviceContext& operator=(const DeviceContext&) = delete;
@@ -50,5 +55,8 @@ struct DeviceContext {
 
     size_t memoryBudget();
     size_t memoryUsage();
+    size_t memoryTotal();
+    void recordAllocation(size_t bytes);
+    void recordFree(size_t bytes);
     void flush();
 };
