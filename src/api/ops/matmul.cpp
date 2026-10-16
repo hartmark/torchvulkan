@@ -236,6 +236,10 @@ at::Tensor dispatch_matmul_simd_shader(
     std::vector<at::Tensor> readTensors = {ops.self_b, ops.other_b};
     if (has_bias) readTensors.push_back(ops.bias_b);
 
+    // a 1D grid past the limit would be wrapped into rows by dispatchShader, which the tiles don't index for
+    TORCH_CHECK((N + TILE_N - 1) / TILE_N <= device->properties.limits.maxComputeWorkGroupCount[0],
+        "torchvulkan [ERROR]: matmul with N = ", N, " needs more column tiles than the device allows.");
+
     // the batch is the grid's z dimension, so it goes in chunks of the device's limit
     const int64_t max_batch = device->properties.limits.maxComputeWorkGroupCount[2];
     for (int64_t b0 = 0; b0 < B; b0 += max_batch)
@@ -405,6 +409,9 @@ at::Tensor dispatch_matmul_coop_shader(
        .push(params.block_size)
        .push(static_cast<uint32_t>(params.use_shared_memory));
     SpecializationArgs specialization = spd.build();
+
+    TORCH_CHECK(N_padded / tile_n <= device->properties.limits.maxComputeWorkGroupCount[0],
+        "torchvulkan [ERROR]: matmul with N = ", N, " needs more column tiles than the device allows.");
 
     const int64_t max_batch = device->properties.limits.maxComputeWorkGroupCount[2];
     for (int64_t b0 = 0; b0 < B; b0 += max_batch)

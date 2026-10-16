@@ -1,6 +1,7 @@
 module multinomial;
 
 __exported import core.philox;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint WG_x = 0;
 
@@ -21,7 +22,7 @@ void multinomial_main<R : __BuiltinFloatingPointType & IRandomReal>(
     uint3 gi : SV_DispatchThreadID,
     uniform MultinomialPushConstants pcs)
 {
-    uint index = gi.x;
+    uint index = flat_thread(gi, WG_x);
     if (index >= pcs.numel) return;
 
     R* cdf = (R*)pcs.cdf + (index / pcs.samples) * pcs.categories;

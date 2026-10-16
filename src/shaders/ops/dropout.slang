@@ -1,6 +1,7 @@
 module dropout;
 
 __exported import core.philox;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint WG_x = 0;
 
@@ -24,10 +25,11 @@ void dropout_main<T : IRandomDtype, let VEC_SIZE : int>(
 {
     typealias R = T.Real;
 
-    uint first = gi.x * VEC_SIZE;
+    uint stream_id = flat_thread(gi, WG_x);
+    uint first = stream_id * VEC_SIZE;
     if (first >= pcs.numel) return;
 
-    var stream = RandomStream<R>(pcs.seed, pcs.offset, gi.x);
+    var stream = RandomStream<R>(pcs.seed, pcs.offset, stream_id);
     R keepProb = R.fromBits(pcs.keep_prob);
     R scale = R.fromBits(pcs.scale);
 

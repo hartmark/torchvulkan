@@ -108,5 +108,5 @@ void reduce_subgroup_main<T : __BuiltinFloatingPointType>(
     uint3 group_thread_id : SV_GroupThreadID,
     uniform SubgroupReducePushConstants pcs)
 {
-    dispatchSubgroupReduce<T>(group_id.x, group_thread_id.x, pcs);
+    dispatchSubgroupReduce<T>(flat_group(group_id), group_thread_id.x, pcs);
 }

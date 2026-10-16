@@ -29,7 +29,7 @@ public struct IndexGatherPushConstants
 
 public void indexGatherKernel<T>(uint3 gi, IndexGatherPushConstants pcs)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= pcs.numel) return;
 
     T* tensor_out = (T*)pcs.tensor_out;

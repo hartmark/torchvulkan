@@ -1,6 +1,7 @@
 module sort;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint DESCENDING = 0;
@@ -49,7 +50,7 @@ bool sortsBefore<T : ITorchVulkan>(T x, int64_t px, T y, int64_t py, uint n)
 
 public void sortKernel<T : ITorchVulkan>(uint3 gi, SortPushConstants pcs)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (uint64_t(idx) >= pcs.threads) return;
 
     T* keys_out = (T*)pcs.keys_out;

@@ -27,7 +27,7 @@ public void copyKernel<T>(
     uint64_t address_metadata,
     uint64_t numel)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= numel) return;
 
     T* tensor_in = (T*)address_in;

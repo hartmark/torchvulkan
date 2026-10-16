@@ -1,6 +1,7 @@
 module searchsorted;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint RIGHT = 0;
 [[vk::constant_id(1)]] public const uint HAS_SORTER = 0;
@@ -22,7 +23,7 @@ public struct SearchsortedPushConstants
 // torch's lower and upper bound, so NaNs land past the end
 public void searchsortedKernel<T : ITorchVulkan>(uint3 gi, SearchsortedPushConstants pcs)
 {
-    uint64_t idx = uint64_t(gi.x);
+    uint64_t idx = uint64_t(flat_thread(gi, WG_x));
     if (idx >= pcs.count) return;
 
     T* sorted = (T*)pcs.sorted;

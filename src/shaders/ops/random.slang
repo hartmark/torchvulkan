@@ -134,10 +134,11 @@ public struct RandomIntOp<T : IRandomDtype> : IRandomOp<T>
 
 public void baseRandomKernel<T : IRandomDtype, Op : IRandomOp<T>, let VEC_SIZE : int>(uint3 gi, RandomPushConstants pcs)
 {
-    uint first = gi.x * VEC_SIZE;
+    uint stream_id = flat_thread(gi, WG_x);
+    uint first = stream_id * VEC_SIZE;
     if (first >= pcs.numel) return;
 
-    var stream = RandomStream<T.Real>(pcs.seed, pcs.offset, gi.x);
+    var stream = RandomStream<T.Real>(pcs.seed, pcs.offset, stream_id);
     T* tensor = (T*)pcs.tensor;
 
     for (int k = 0; k < VEC_SIZE; k++)

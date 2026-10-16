@@ -1,6 +1,7 @@
 module embedding_backward;
 
 __exported import core.dtype;
+import core.indexing;
 
 [[vk::constant_id(0)]] public const uint WG_x = 0;
 
@@ -19,7 +20,7 @@ public struct EmbeddingBackwardPushConstants
 
 public void embeddingBackwardKernel<T : ITorchVulkan>(uint3 gi, EmbeddingBackwardPushConstants pcs)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= pcs.numel_out) return;
 
     T* grad = (T*)pcs.grad;

@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <ATen/autocast_mode.h>
 #include <ATen/native/CPUFallback.h>
 #include "vulkan/vulkan_context.h"
 
@@ -12,4 +13,24 @@ void vulkan_cpu_fallback(const c10::OperatorHandle& op, torch::jit::Stack* stack
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
     m.fallback(torch::CppFunction::makeFromBoxedFunction<&vulkan_cpu_fallback>());
+}
+
+TORCH_LIBRARY_IMPL(_, AutocastPrivateUse1, m) {
+    m.fallback(torch::CppFunction::makeFallthrough());
+}
+
+namespace at::autocast {
+
+TORCH_LIBRARY_IMPL(aten, AutocastPrivateUse1, m) {
+#define _KERNEL_PRIVATEUSEONE_LOW_PRECISION_FP(...) KERNEL_PRIVATEUSEONE(__VA_ARGS__, lower_precision_fp)
+    AT_FORALL_LOWER_PRECISION_FP(_KERNEL_PRIVATEUSEONE_LOW_PRECISION_FP)
+#define _KERNEL_PRIVATEUSEONE_FP32(...) KERNEL_PRIVATEUSEONE(__VA_ARGS__, fp32)
+    AT_FORALL_FP32(_KERNEL_PRIVATEUSEONE_FP32)
+#define _KERNEL_PRIVATEUSEONE_FP32_SET_OPT_DTYPE(...) KERNEL_PRIVATEUSEONE(__VA_ARGS__, fp32_set_opt_dtype)
+    AT_FORALL_FP32_SET_OPT_DTYPE(_KERNEL_PRIVATEUSEONE_FP32_SET_OPT_DTYPE)
+    AT_FORALL_DIFFERENT_REDISPATCH_SIGNATURE(KERNEL_DIFFERENT_REDISPATCH_SIGNATURE_PRIVATEUSEONE)
+#define _KERNEL_PRIVATEUSEONE_PROMOTE(...) KERNEL_PRIVATEUSEONE(__VA_ARGS__, promote)
+    AT_FORALL_PROMOTE(_KERNEL_PRIVATEUSEONE_PROMOTE)
+}
+
 }

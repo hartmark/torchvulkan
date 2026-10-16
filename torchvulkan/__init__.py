@@ -1,5 +1,6 @@
 import atexit
 import sys
+from collections import namedtuple
 
 try:
     import torch
@@ -27,6 +28,17 @@ def device_count() -> int:
 def current_device() -> int:
     return _C.current_device()
 
+def set_device(device) -> None:
+    index = _device_index(device)
+    if index >= 0:
+        torch.accelerator.set_device_index(index)
+
+def is_initialized() -> bool:
+    return _C._is_initialized()
+
+def _lazy_init() -> None:
+    _C._lazy_init()
+
 def device(dev):
     index = dev if isinstance(dev, int) or dev is None else torch.device(dev).index
     return torch.accelerator.device_index(index)
@@ -37,6 +49,38 @@ def synchronize(device=None) -> None:
 def empty_cache() -> None:
     _C.empty_cache()
 
+def memory_allocated(device=None) -> int:
+    return _C._memory_allocated(_device_index(device))
+
+def max_memory_allocated(device=None) -> int:
+    return _C._max_memory_allocated(_device_index(device))
+
+def memory_reserved(device=None) -> int:
+    return _C._memory_usage(_device_index(device))
+
+def reset_peak_memory_stats(device=None) -> None:
+    _C._reset_peak_memory_stats(_device_index(device))
+
+def memory_stats(device=None) -> dict:
+    index = _device_index(device)
+    allocated = _C._memory_allocated(index)
+    peak = _C._max_memory_allocated(index)
+    return {
+        "active_bytes.all.current": allocated,
+        "active_bytes.all.peak": peak,
+        "allocated_bytes.all.current": allocated,
+        "allocated_bytes.all.peak": peak,
+        "reserved_bytes.all.current": _C._memory_usage(index),
+    }
+
+DeviceProperties = namedtuple("DeviceProperties", ["name", "total_memory", "vendor_id", "device_id", "api_version", "driver_version", "subgroup_size"])
+
+def get_device_properties(device=None) -> DeviceProperties:
+    return DeviceProperties(**_C._device_properties(_device_index(device)))
+
+def get_device_name(device=None) -> str:
+    return get_device_properties(device).name
+
 def _device_index(dev) -> int:
     if isinstance(dev, int):
         return dev
@@ -45,6 +89,14 @@ def _device_index(dev) -> int:
 
 def _default_generator(dev=None) -> torch.Generator:
     return _C._default_generator(_device_index(dev))
+
+def _get_generator(device) -> torch.Generator:
+    return _default_generator(device)
+
+def __getattr__(name):
+    if name == "default_generators":
+        return tuple(_default_generator(index) for index in range(device_count()))
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 def _uint64_seed(seed) -> int:
     seed = int(seed)
@@ -80,6 +132,12 @@ def set_rng_state_all(new_states) -> None:
     for index, state in enumerate(new_states):
         set_rng_state(state, index)
 
+def get_amp_supported_dtype() -> list:
+    return _C._amp_supported_dtypes(current_device())
+
+def is_bf16_supported() -> bool:
+    return torch.bfloat16 in get_amp_supported_dtype()
+
 def _is_in_bad_fork() -> bool:
     return _C._is_in_bad_fork()
 
@@ -87,3 +145,11 @@ atexit.register(_C._save_pipeline_caches)
 
 torch.utils.rename_privateuse1_backend('vulkan')
 torch._register_device_module('vulkan', sys.modules[__name__])
+
+def _tensor_to_vulkan(self, device=None, non_blocking=False, **kwargs) -> torch.Tensor:
+    return self.to(torch.device("vulkan", _device_index(device)), non_blocking=non_blocking, **kwargs)
+
+# override torch.Tensor existing implementations for torch's own Vulkan backend
+torch.Tensor.vulkan = _tensor_to_vulkan
+torch.Tensor.is_vulkan = property(lambda self: self.device.type == "vulkan")
+torch.utils.generate_methods_for_privateuse1_backend(for_tensor=False)

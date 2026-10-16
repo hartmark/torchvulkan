@@ -36,7 +36,7 @@ public void castKernel<Src : ITorchVulkan, Dst : ITorchVulkan, let VEC_SIZE : in
     uint64_t address_metadata,
     uint64_t numel)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
 
     if (IS_CONTIG != 0)
     {

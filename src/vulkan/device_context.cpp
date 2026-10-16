@@ -22,6 +22,25 @@ size_t DeviceContext::memoryUsage()
     return budgets[vram_heap_index].usage;
 }
 
+size_t DeviceContext::memoryTotal()
+{
+    const VkPhysicalDeviceMemoryProperties* props = nullptr;
+    vmaGetMemoryProperties(allocator, &props);
+    return props->memoryHeaps[vram_heap_index].size;
+}
+
+void DeviceContext::recordAllocation(size_t bytes)
+{
+    size_t now = allocated_bytes.fetch_add(bytes) + bytes;
+    size_t peak = peak_allocated_bytes.load();
+    while (now > peak && !peak_allocated_bytes.compare_exchange_weak(peak, now)) {}
+}
+
+void DeviceContext::recordFree(size_t bytes)
+{
+    allocated_bytes.fetch_sub(bytes);
+}
+
 DeviceContext::~DeviceContext()
 {
     delete shader_manager;

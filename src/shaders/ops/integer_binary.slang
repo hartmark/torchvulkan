@@ -85,7 +85,7 @@ T evalIntegerBinary<T : __BuiltinIntegerType>(T a, T b)
 
 public void integerBinaryKernel<T : __BuiltinIntegerType>(uint3 gi, IntegerBinaryPushConstants<T> pcs)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
     if (idx >= pcs.numel) return;
 
     T* tensor_a = (T*)pcs.tensor_a;

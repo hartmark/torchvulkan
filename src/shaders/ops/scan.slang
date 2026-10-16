@@ -135,5 +135,5 @@ void scan_main<T : ITorchVulkan>(
     uniform ScanPushConstants pcs)
 {
     static groupshared T smem[SCAN_SMEM_SIZE];
-    dispatchScan<T, SCAN_SMEM_SIZE>(group_id.x, group_thread_id.x, smem, pcs);
+    dispatchScan<T, SCAN_SMEM_SIZE>(flat_group(group_id), group_thread_id.x, smem, pcs);
 }

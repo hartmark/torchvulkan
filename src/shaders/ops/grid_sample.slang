@@ -1,5 +1,7 @@
 module grid_sample;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint MODE = 0;
 [[vk::constant_id(1)]] public const uint DIMS = 2;
 [[vk::constant_id(2)]] public const uint INTERPOLATION = 0;
@@ -258,7 +260,7 @@ void inputGradKernel<T : __BuiltinFloatingPointType>(uint64_t idx, Geometry g, G
 
 void gridSampleKernel<T : __BuiltinFloatingPointType>(uint3 gi, GridSamplePushConstants pcs)
 {
-    uint64_t idx = uint64_t(gi.x);
+    uint64_t idx = uint64_t(flat_thread(gi, WG_x));
     if (idx >= pcs.count) return;
     Geometry g = loadGeometry(pcs.metadata);
     if (MODE == 3)

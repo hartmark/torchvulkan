@@ -144,7 +144,7 @@ public void baseBinaryKernel<T : ITorchVulkan, Op : IBinaryOp<T>, let VEC_SIZE :
     T alpha,
     T scalar_value)
 {
-    uint idx = gi.x;
+    uint idx = flat_thread(gi, WG_x);
 
     if (IS_CONTIG != 0)
     {

@@ -1,5 +1,7 @@
 module triangular_solve;
 
+import core.indexing;
+
 [[vk::constant_id(0)]] public const uint UPPER = 0;
 [[vk::constant_id(1)]] public const uint UNIT_DIAGONAL = 0;
 [[vk::constant_id(2)]] public const uint WG_x = 0;
@@ -50,5 +52,5 @@ void triangular_solve_main<T : __BuiltinFloatingPointType>(
     uint3 gi : SV_DispatchThreadID,
     uniform TriangularSolvePushConstants pcs)
 {
-    triangularSolveKernel<T>(uint64_t(gi.x), pcs);
+    triangularSolveKernel<T>(uint64_t(flat_thread(gi, WG_x)), pcs);
 }
