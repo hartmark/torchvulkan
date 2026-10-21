@@ -155,6 +155,14 @@ at::Tensor torchvulkan::copy_vulkan(
     bool /* non_blocking */)
 {
     if (dst.numel() == 0) return dst;
+
+    // as at::native::copy_, copying a tensor onto its own memory is a no-op (and vkCmdCopyBuffer forbids overlapping regions)
+    if (self.is_alias_of(dst) && self.storage_offset() == dst.storage_offset() && self.sizes().equals(dst.sizes()) &&
+        self.strides().equals(dst.strides()) && self.scalar_type() == dst.scalar_type() &&
+        self.is_conj() == dst.is_conj() && self.is_neg() == dst.is_neg()) {
+        return dst;
+    }
+
     TORCH_CHECK(!dst.is_conj() && !dst.is_neg(), "torchvulkan [NOT IMPLEMENTED]: Copying into a conjugated or negated destination is not yet supported.");
 
     // a lazily conjugated or negated source copies its stored values, then the copy applies the pending op
