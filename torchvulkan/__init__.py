@@ -96,6 +96,8 @@ def _get_generator(device) -> torch.Generator:
 def __getattr__(name):
     if name == "default_generators":
         return tuple(_default_generator(index) for index in range(device_count()))
+    if name == "_initialized":
+        return is_initialized()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 def _uint64_seed(seed) -> int:

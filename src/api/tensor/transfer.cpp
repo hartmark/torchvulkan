@@ -155,6 +155,14 @@ at::Tensor torchvulkan::copy_vulkan(
     bool /* non_blocking */)
 {
     if (dst.numel() == 0) return dst;
+
+    // as at::native::copy_, copying a tensor onto its own memory is a no-op (and vkCmdCopyBuffer forbids overlapping regions)
+    if (self.is_alias_of(dst) && self.storage_offset() == dst.storage_offset() && self.sizes().equals(dst.sizes()) &&
+        self.strides().equals(dst.strides()) && self.scalar_type() == dst.scalar_type() &&
+        self.is_conj() == dst.is_conj() && self.is_neg() == dst.is_neg()) {
+        return dst;
+    }
+
     TORCH_CHECK(!dst.is_conj() && !dst.is_neg(), "torchvulkan [NOT IMPLEMENTED]: Copying into a conjugated or negated destination is not yet supported.");
 
     // a lazily conjugated or negated source copies its stored values, then the copy applies the pending op
@@ -218,6 +226,13 @@ at::Scalar local_scalar_dense_vulkan(const at::Tensor& self)
     return self.cpu().item();
 }
 
+// without this, Module.to("vulkan") replaces each Parameter instead of setting .data, which unties shared weights
+bool has_compatible_shallow_copy_type_vulkan(const at::Tensor& self, const at::Tensor& from)
+{
+    auto dense = [](const at::Tensor& t) { return t.layout() == at::kStrided && (t.is_cpu() || t.is_privateuseone()); };
+    return self.unsafeGetTensorImpl()->has_compatible_shallow_copy_type(from.key_set()) || (dense(self) && dense(from));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -225,4 +240,5 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_copy_from_and_resize", &copy_from_and_resize_vulkan);
     m.impl("copy_", &copy_vulkan_);
     m.impl("_local_scalar_dense", &local_scalar_dense_vulkan);
+    m.impl("_has_compatible_shallow_copy_type", &has_compatible_shallow_copy_type_vulkan);
 }

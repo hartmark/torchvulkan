@@ -295,8 +295,11 @@ void VulkanContext::createDeviceContexts()
         context->properties = props2.properties;
         context->driver_id = props12.driverID;
 
-        // every pipeline is pinned to the largest subgroup size (see createPipeline); without control, kernels get the driver's default
-        context->support_subgroup_control = features13.subgroupSizeControl && (props13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT);
+        // every pipeline is pinned to the largest subgroup size (see createPipeline); without control, kernels get the driver's default.
+        // a pinned size caps a workgroup at size * maxComputeWorkgroupSubgroups, so devices where that is below the workgroups
+        // we launch (lavapipe: 4 * 32) are left unpinned
+        bool pinned_fits = props13.maxSubgroupSize * props13.maxComputeWorkgroupSubgroups >= props2.properties.limits.maxComputeWorkGroupInvocations;
+        context->support_subgroup_control = features13.subgroupSizeControl && (props13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) && pinned_fits;
         context->subgroup_size = context->support_subgroup_control ? props13.maxSubgroupSize : subgroupProps.subgroupSize;
 
         // subgroup reductions need arithmetic + shuffle ops available in compute shaders
@@ -375,6 +378,7 @@ void VulkanContext::createDeviceWithExtensions()
         enable12.shaderFloat16 = supported12.shaderFloat16;
         enable12.shaderInt8 = supported12.shaderInt8;
         enable12.storageBuffer8BitAccess = supported12.storageBuffer8BitAccess;
+        enable12.storagePushConstant8 = supported12.storagePushConstant8; // 8-bit kernels take T-typed scalars as push constants
         enable12.scalarBlockLayout = supported12.scalarBlockLayout;
         enable12.bufferDeviceAddress = supported12.bufferDeviceAddress;
         enable12.shaderSubgroupExtendedTypes = supported12.shaderSubgroupExtendedTypes; // subgroup ops on 8/16/64-bit types for reductions
@@ -382,6 +386,7 @@ void VulkanContext::createDeviceWithExtensions()
         enable12.vulkanMemoryModelDeviceScope = supported12.vulkanMemoryModelDeviceScope;
         VkPhysicalDeviceVulkan11Features enable11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
         enable11.storageBuffer16BitAccess = supported11.storageBuffer16BitAccess;
+        enable11.storagePushConstant16 = supported11.storagePushConstant16;
         enable11.pNext = &enable12;
         VkPhysicalDeviceFeatures enable10{};
         enable10.shaderFloat64 = supportedFeatures2.features.shaderFloat64;
