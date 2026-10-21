@@ -218,6 +218,13 @@ at::Scalar local_scalar_dense_vulkan(const at::Tensor& self)
     return self.cpu().item();
 }
 
+// without this, Module.to("vulkan") replaces each Parameter instead of setting .data, which unties shared weights
+bool has_compatible_shallow_copy_type_vulkan(const at::Tensor& self, const at::Tensor& from)
+{
+    auto dense = [](const at::Tensor& t) { return t.layout() == at::kStrided && (t.is_cpu() || t.is_privateuseone()); };
+    return self.unsafeGetTensorImpl()->has_compatible_shallow_copy_type(from.key_set()) || (dense(self) && dense(from));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -225,4 +232,5 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_copy_from_and_resize", &copy_from_and_resize_vulkan);
     m.impl("copy_", &copy_vulkan_);
     m.impl("_local_scalar_dense", &local_scalar_dense_vulkan);
+    m.impl("_has_compatible_shallow_copy_type", &has_compatible_shallow_copy_type_vulkan);
 }
