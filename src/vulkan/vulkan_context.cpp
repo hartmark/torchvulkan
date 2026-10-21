@@ -295,8 +295,11 @@ void VulkanContext::createDeviceContexts()
         context->properties = props2.properties;
         context->driver_id = props12.driverID;
 
-        // every pipeline is pinned to the largest subgroup size (see createPipeline); without control, kernels get the driver's default
-        context->support_subgroup_control = features13.subgroupSizeControl && (props13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT);
+        // every pipeline is pinned to the largest subgroup size (see createPipeline); without control, kernels get the driver's default.
+        // a pinned size caps a workgroup at size * maxComputeWorkgroupSubgroups, so devices where that is below the workgroups
+        // we launch (lavapipe: 4 * 32) are left unpinned
+        bool pinned_fits = props13.maxSubgroupSize * props13.maxComputeWorkgroupSubgroups >= props2.properties.limits.maxComputeWorkGroupInvocations;
+        context->support_subgroup_control = features13.subgroupSizeControl && (props13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) && pinned_fits;
         context->subgroup_size = context->support_subgroup_control ? props13.maxSubgroupSize : subgroupProps.subgroupSize;
 
         // subgroup reductions need arithmetic + shuffle ops available in compute shaders
