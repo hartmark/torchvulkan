@@ -1,6 +1,7 @@
 #include "dispatch.h"
 #include "device_context.h"
 #include "shader.h"
+#include <algorithm>
 #include <unordered_map>
 
 void DAGDispatcher::recordOp(VkCommandBuffer cmd, const OpInfo* op)
@@ -88,7 +89,7 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
         {
             // WAW: this write must wait for the previous writer
             auto it_write = last_writer.find(output.base_addr);
-            if (it_write != last_writer.end())
+            if (it_write != last_writer.end() && it_write->second != op)
             {
                 dependents[it_write->second].push_back(op);
                 unresolved_deps[op]++;
@@ -121,8 +122,14 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
 
     while (!ready.empty())
     {
-        // record the whole wave together so each op keeps its own pipeline / push constants / copy region
-        for (const OpInfo* op : ready) recordOp(cmd, op);
+        // we see an issue on NVIDIA where a vkCmdDispatch followed by a vkCmdCopyBuffer in the same wave lets the next wave read the 
+        // dispatch's output before it was written. so we separate the copy ops from the dispatch ops with a barrier.
+        auto first_dispatch = std::stable_partition(ready.begin(), ready.end(), [](const OpInfo* op) { return op->type == OpType::COPY; });
+        for (auto it = ready.begin(); it != ready.end(); ++it)
+        {
+            if (it == first_dispatch && it != ready.begin()) recordBarrier(cmd);
+            recordOp(cmd, *it);
+        }
 
         std::vector<const OpInfo*> next_wave;
         for (const OpInfo* op : ready)
