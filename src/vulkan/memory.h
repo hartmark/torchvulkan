@@ -1,5 +1,6 @@
 #pragma once
 #include <volk.h>
+#include <c10/core/Storage.h>
 
 #include "vk_mem_alloc.h"
 
@@ -42,3 +43,8 @@ private:
     void* mappedData_ = nullptr;
     uint64_t bufferAddress_ = 0;
 };
+
+inline VulkanBuffer* extract_buffer(const c10::Storage& storage)
+{
+    return static_cast<VulkanBuffer*>(storage.data_ptr().get());
+}

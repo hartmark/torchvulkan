@@ -21,7 +21,7 @@
 
 inline uint64_t get_tensor_address(const at::Tensor& t) 
 {
-    VulkanBuffer* buffer = static_cast<VulkanBuffer*>(t.storage().data_ptr().get_context());
+    VulkanBuffer* buffer = extract_buffer(t.storage());
     return buffer->bufferAddress() + t.storage_offset() * t.element_size();
 }
 
