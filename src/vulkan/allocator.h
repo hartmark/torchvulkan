@@ -11,7 +11,7 @@ public:
      * @warning PyTorch expects `c10::DataPtr` to hold a raw byte
      * pointer. Because Vulkan memory is opaque to the CPU, we store the `VulkanBuffer*`
      * instance in BOTH the `data` and `ctx` fields. When extracting the buffer elsewhere,
-     * you MUST use `(VulkanBuffer*)tensor.data_ptr().get_context()`.
+     * use `extract_buffer(tensor.storage())`, which reads the `data` field.
      */
     c10::DataPtr allocate(size_t nbytes) override;
     static void deleter(void* ptr);

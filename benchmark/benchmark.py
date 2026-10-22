@@ -6,12 +6,12 @@ torchvulkan `vulkan` device), then times a combined forward + backward pass
 per-backend timings against parameter count so you can see how each
 implementation scales as the model grows.
 
-    python benchmark/benchmark.py mnist                 # sensible defaults
-    python benchmark/benchmark.py llm --iters 50        # more samples per point
-    python benchmark/benchmark.py mnist --out bench.png # where to save the figure
+    python benchmark/benchmark.py all                   # every model, one panel each
+    python benchmark/benchmark.py llm --iters 50        # one model, more samples per point
+    python benchmark/benchmark.py mlp --out bench.png   # where to save the figure
 
-The model is selected by subcommand (``mnist`` or ``llm``); everything else
--- backend detection, subprocess isolation, timing, plotting -- is shared.
+The model is selected by subcommand (``mlp``, ``llm``, ``resnet``, or ``all``); everything
+else -- backend detection, subprocess isolation, timing, plotting -- is shared.
 Adding a new model to benchmark means writing one ``Task`` subclass, not a
 second copy of this whole file.
 
@@ -37,8 +37,9 @@ import torch
 import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from examples.mnist import SimpleNN
-from examples.llm import TinyGPT
+from examples.mlp import MLP
+from examples.llm import GPT
+from examples.conv import ResNet
 
 ALL_BACKENDS = ["cpu", "cuda", "mps", "vulkan"]
 RESULT_PREFIX = "RESULT_JSON "
@@ -76,15 +77,19 @@ class Task:
         raise NotImplementedError
 
 
-class MnistTask(Task):
-    name = "mnist"
+def meta_param_count(build):
+    with torch.device("meta"):
+        return sum(p.numel() for p in build().parameters())
+
+
+class MLPTask(Task):
+    name = "mlp"
 
     def add_args(self, parser):
         parser.add_argument(
             "--sizes", type=int, nargs="+",
-            default=[64, 1024, 16384, 65536, 131072, 262144, 393216],
-            help="hidden widths to sweep (params ~= 795 x width; the default "
-                 "top reaches ~312M params)",
+            default=[64, 256, 1024, 2048, 4096, 8192],
+            help="hidden widths to sweep (three hidden layers; the default top reaches ~141M params)",
         )
         parser.add_argument("--batch-size", type=int, default=128)
 
@@ -92,10 +97,10 @@ class MnistTask(Task):
         return ["--batch-size", str(args.batch_size)]
 
     def param_count(self, size, args):
-        return 784 * size + size + size * 10 + 10
+        return meta_param_count(lambda: MLP(size))
 
     def build(self, size, args, device, dtype):
-        model = SimpleNN(size).to(device).to(dtype)
+        model = MLP(size).to(device).to(dtype)
         data = torch.randn(args.batch_size, 1, 28, 28, device=device, dtype=dtype)
         targets = torch.randint(0, 10, (args.batch_size,), device=device)
         return model, data, targets
@@ -112,39 +117,26 @@ class LLMTask(Task):
         parser.add_argument(
             "--sizes", type=int, nargs="+",
             default=[64, 128, 256, 384, 512, 768],
-            help="n_embd (model width) values to sweep, each a multiple of "
-                 "the 64-wide head size; the default top reaches ~30M params",
+            help="n_embd (model width) values to sweep, each a multiple of the 64-wide head size; "
+                 "the default top reaches ~26M params",
         )
         parser.add_argument("--batch-size", type=int, default=8)
-        parser.add_argument("--seq-len", type=int, default=64, help="context length")
+        parser.add_argument("--seq-len", type=int, default=128, help="context length")
         parser.add_argument("--n-layer", type=int, default=4, help="transformer blocks, held fixed while n_embd is swept")
-        parser.add_argument("--vocab-size", type=int, default=1000)
 
     def cli_args(self, args):
-        return [
-            "--batch-size", str(args.batch_size),
-            "--seq-len", str(args.seq_len),
-            "--n-layer", str(args.n_layer),
-            "--vocab-size", str(args.vocab_size),
-        ]
+        return ["--batch-size", str(args.batch_size), "--seq-len", str(args.seq_len), "--n-layer", str(args.n_layer)]
+
+    def model(self, size, args):
+        return GPT(block_size=args.seq_len, n_layer=args.n_layer, n_embd=size, head_dim=self.HEAD_DIM)
 
     def param_count(self, size, args):
-        # attention isn't shaped like SDPA needs (no new shader): torch.bmm, not the general
-        # broadcasting torch.matmul, whose backward isn't wired up for every backend yet.
-        with torch.device("meta"):
-            model = TinyGPT(
-                vocab_size=args.vocab_size, block_size=args.seq_len,
-                n_layer=args.n_layer, n_embd=size, head_dim=self.HEAD_DIM,
-            )
-        return sum(p.numel() for p in model.parameters())
+        return meta_param_count(lambda: self.model(size, args))
 
     def build(self, size, args, device, dtype):
-        model = TinyGPT(
-            vocab_size=args.vocab_size, block_size=args.seq_len,
-            n_layer=args.n_layer, n_embd=size, head_dim=self.HEAD_DIM,
-        ).to(device).to(dtype)
-        data = torch.randint(0, args.vocab_size, (args.batch_size, args.seq_len), device=device)
-        targets = torch.randint(0, args.vocab_size, (args.batch_size * args.seq_len,), device=device)
+        model = self.model(size, args).to(device).to(dtype)
+        data = torch.randint(0, 256, (args.batch_size, args.seq_len), device=device)
+        targets = torch.randint(0, 256, (args.batch_size * args.seq_len,), device=device)
         return model, data, targets
 
     def loss(self, model, data, targets, criterion):
@@ -152,7 +144,35 @@ class LLMTask(Task):
         return criterion(logits.view(-1, logits.size(-1)), targets)
 
 
-TASKS = {"mnist": MnistTask(), "llm": LLMTask()}
+class ResNetTask(Task):
+    name = "resnet"
+
+    def add_args(self, parser):
+        parser.add_argument(
+            "--sizes", type=int, nargs="+",
+            default=[8, 16, 32, 48, 64, 96],
+            help="base channel widths to sweep (stages run at 1x, 2x and 4x the width; "
+                 "the default top reaches ~6.2M params)",
+        )
+        parser.add_argument("--batch-size", type=int, default=32)
+
+    def cli_args(self, args):
+        return ["--batch-size", str(args.batch_size)]
+
+    def param_count(self, size, args):
+        return meta_param_count(lambda: ResNet(size))
+
+    def build(self, size, args, device, dtype):
+        model = ResNet(size).to(device).to(dtype)
+        data = torch.randn(args.batch_size, 3, 32, 32, device=device, dtype=dtype)
+        targets = torch.randint(0, 10, (args.batch_size,), device=device)
+        return model, data, targets
+
+    def loss(self, model, data, targets, criterion):
+        return criterion(model(data), targets)
+
+
+TASKS = {"mlp": MLPTask(), "llm": LLMTask(), "resnet": ResNetTask()}
 
 
 def device_available(backend: str) -> bool:
@@ -259,7 +279,7 @@ def worker(task, backend, args):
 def spawn_worker(task, backend, args):
     """Run one backend in a fresh process; return its rows (or None)."""
     cmd = [
-        sys.executable, os.path.abspath(__file__), args.model,
+        sys.executable, os.path.abspath(__file__), task.name,
         "--worker", backend,
         "--iters", str(args.iters),
         "--warmup", str(args.warmup),
@@ -295,17 +315,12 @@ PALETTE = ["#2a78d6", "#008300", "#e87ba4", "#eda100", "#1baf7a", "#eb6834"]
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#d9d8d4", "#fcfcfb"
 
 
-def plot(results, out_path):
-    import matplotlib
+TITLES = {"mlp": "MLP", "llm": "LLM", "resnet": "ResNet"}
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
-    colors = {name: PALETTE[i % len(PALETTE)] for i, name in enumerate(results)}
-
-    fig, ax = plt.subplots(figsize=(9, 6), facecolor=SURFACE)
+def draw(ax, results, title, legend):
+    colors = {name: PALETTE[i % len(PALETTE)] for i, name in enumerate(ALL_BACKENDS)}
     ax.set_facecolor(SURFACE)
-
     for name, rows in results.items():
         rows = [r for r in rows if r[1] is not None]
         if not rows:
@@ -319,6 +334,7 @@ def plot(results, out_path):
             va="center", fontsize=11, color=colors[name], fontweight="bold",
         )
 
+    ax.set_title(title, fontsize=13, color=INK)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("model parameters", fontsize=11, color=MUTED)
@@ -329,18 +345,38 @@ def plot(results, out_path):
         ax.spines[spine].set_visible(False)
     for spine in ("left", "bottom"):
         ax.spines[spine].set_color(GRID)
-    ax.legend(frameon=False, fontsize=11, labelcolor=INK)
+    if legend:
+        ax.legend(frameon=False, fontsize=11, labelcolor=INK)
+
+
+def plot(panels, out_path):
+    """Plot {model name: {backend: rows}}, one panel per model."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(7 * len(panels), 5.5), facecolor=SURFACE, squeeze=False)
+    for i, (model, results) in enumerate(panels.items()):
+        draw(axes[0][i], results, TITLES.get(model, model), legend=i == 0)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=130, facecolor=SURFACE)
     print(f"\nSaved plot -> {out_path}")
 
 
+def platform_name():
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    return "mps" if mps is not None and mps.is_available() else "vulkan"
+
+
 def build_parser():
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--iters", type=int, default=10, help="timed iters per point")
     shared.add_argument("--warmup", type=int, default=3, help="untimed warmup iters")
-    shared.add_argument("--out", default=None, help="plot path (default: media/<model>_benchmark.png)")
+    shared.add_argument("--out", default=None, help="plot path (default: media/benchmark-<platform>[-<model>].png)")
     shared.add_argument(
         "--worker", choices=ALL_BACKENDS,
         help="internal: benchmark a single backend and print JSON",
@@ -351,33 +387,44 @@ def build_parser():
     for name, task in TASKS.items():
         task_parser = sub.add_parser(name, parents=[shared], help=f"benchmark {task.name}")
         task.add_args(task_parser)
+    sub.add_parser("all", parents=[shared], help="benchmark every model with its default sizes, one panel each")
     return p
 
 
-def main():
-    args = build_parser().parse_args()
-    task = TASKS[args.model]
-
-    if args.worker:
-        worker(task, args.worker, args)
-        return
-
-    print("Probing backends:", ", ".join(candidate_backends()), flush=True)
-    print(f"model={args.model}, iters={args.iters}, warmup={args.warmup}\n", flush=True)
-
+def run(task, args):
+    print(f"\n== {task.name}: iters={args.iters}, warmup={args.warmup}", flush=True)
     results = {}
     for backend in candidate_backends():
         rows = spawn_worker(task, backend, args)
         if rows is not None:
             results[backend] = rows
+    return results
 
-    if not results:
+
+def main():
+    args = build_parser().parse_args()
+
+    if args.worker:
+        worker(TASKS[args.model], args.worker, args)
+        return
+
+    print("Probing backends:", ", ".join(candidate_backends()), flush=True)
+    names = list(TASKS) if args.model == "all" else [args.model]
+    panels = {}
+    for name in names:
+        # each model runs with its own default sizes; only the shared timing options carry over
+        task_args = args if args.model != "all" else build_parser().parse_args([name, "--iters", str(args.iters), "--warmup", str(args.warmup)])
+        results = run(TASKS[name], task_args)
+        if results:
+            panels[name] = results
+
+    if not panels:
         print("No backend produced results.")
         return
 
-    out = args.out or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "media", f"{args.model}_benchmark.png")
-    print("\nBenchmarked backends:", ", ".join(results))
-    plot(results, out)
+    suffix = "" if args.model == "all" else f"-{args.model}"
+    media = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "media")
+    plot(panels, args.out or os.path.join(media, f"benchmark-{platform_name()}{suffix}.png"))
 
 
 if __name__ == "__main__":

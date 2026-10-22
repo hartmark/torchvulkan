@@ -151,7 +151,7 @@ void VulkanShaderManager::dispatchShader(
     auto range_of = [](const at::Tensor& t) 
     {
         return MemoryRange{
-            reinterpret_cast<uint64_t>(t.storage().data_ptr().get_context()),
+            reinterpret_cast<uint64_t>(extract_buffer(t.storage())),
             static_cast<size_t>(t.storage_offset() * t.element_size()),
             t.nbytes()
         };

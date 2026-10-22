@@ -26,16 +26,17 @@ print(z.sum().item())   # move a scalar back to the CPU
 ```
 
 > [!WARNING]
-> **Experimental.** `torchvulkan` is an early-stage project. A small set of operators is implemented natively; everything else falls back to the CPU. Expect breaking changes before `1.0`.
+> **Experimental.** `torchvulkan` is an early-stage project. Most of PyTorch's operators run natively on the GPU; the few that don't fall back to the CPU. Expect breaking changes before `1.0`.
 
 ## Table of contents
 
 - [Installation](#installation)
 - [Quickstart](#quickstart)
-- [Example: training MNIST](#example-training-mnist)
+- [Examples](#examples)
 - [Benchmarks](#benchmarks)
 - [Python API](#python-api)
 - [CPU fallback](#cpu-fallback)
+- [Environment variables](#environment-variables)
 - [Limitations](#limitations)
 - [How it works](#how-it-works)
 
@@ -45,34 +46,12 @@ print(z.sum().item())   # move a scalar back to the CPU
 pip install torchvulkan
 ```
 
-At runtime you need a **Vulkan 1.3 (or newer) driver**: your GPU's driver on Linux and Windows (or a software rasterizer such as Mesa [lavapipe](https://docs.mesa3d.org/drivers/llvmpipe.html)). On macOS the wheel bundles [MoltenVK](https://github.com/KhronosGroup/MoltenVK), so nothing else is needed; set `TORCHVULKAN_SYSTEM_VULKAN=1` to use the system Vulkan loader instead. Verify it worked:
+At runtime you need a **Vulkan 1.3 (or newer) driver**: your GPU's driver on Linux and Windows. On macOS the wheel bundles [MoltenVK](https://github.com/KhronosGroup/MoltenVK), so nothing else is needed; set `TORCHVULKAN_SYSTEM_VULKAN=1` to use the system Vulkan loader instead. Verify it worked:
 
 ```python
 import torchvulkan
 print(torchvulkan.is_available(), torchvulkan.device_count())
 ```
-
-<details>
-<summary><b>Building from source</b></summary>
-
-Prebuilt wheels are published for Linux (x86_64), macOS (Apple Silicon), and Windows (x86_64) on Python 3.10 to 3.14. On other platforms `pip` builds from the source distribution, which needs the shader toolchain below. The same steps build a local checkout for development.
-
-| Requirement | Notes |
-| --- | --- |
-| A Vulkan driver / loader | Your GPU's Vulkan driver, or a software rasterizer such as Mesa [lavapipe](https://docs.mesa3d.org/drivers/llvmpipe.html). On macOS, [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (e.g. `brew install molten-vk`) is found at build time and bundled into the package; pass `-DTORCHVULKAN_MOLTENVK=/path/to/libMoltenVK.dylib` to bundle a specific build. |
-| [Vulkan SDK](https://vulkan.lunarg.com/) | Provides the Vulkan headers. |
-| [`slangc`](https://github.com/shader-slang/slang/releases) | The Slang shader compiler, on your `PATH`. |
-| CMake ≥ 3.18 + a C++20 compiler | Ninja is recommended (`SKBUILD_CMAKE_GENERATOR=Ninja`). |
-| `torch==2.13.0` | Install before building; the extension is compiled against this exact version. |
-
-> The exact per-OS commands CI uses to install this toolchain live in [`.github/actions/setup-toolchain`](.github/actions/setup-toolchain/action.yml).
-
-```bash
-pip install torch==2.13.0
-pip install .            # editable install for development: pip install -e .
-```
-
-</details>
 
 ## Quickstart
 
@@ -97,20 +76,29 @@ model = torch.nn.Linear(128, 10).to("vulkan")
 out = model(torch.randn(32, 128).to("vulkan"))
 ```
 
-## Example: training MNIST
+## Examples
 
-[`examples/mnist.py`](examples/mnist.py) trains a small fully-connected network on the Vulkan device end to end. Forward, loss, backward, and an Adam step all run through the backend:
+Each example trains a model end to end on the Vulkan device: forward pass, loss, backward pass and optimizer step all run through the backend.
+
+| Example | Model | Data |
+| --- | --- | --- |
+| [`examples/mlp.py`](examples/mlp.py) | A multi-layer perceptron with GELU and dropout, trained with AdamW | MNIST |
+| [`examples/llm.py`](examples/llm.py) | A small modern decoder-only transformer: RMSNorm, rotary embeddings, grouped-query attention, a SwiGLU MLP and tied embeddings. Samples text when it's done | Its own source code, character by character |
+| [`examples/resnet.py`](examples/resnet.py) | A ResNet with residual blocks, batch norm and global average pooling, trained with SGD and a one-cycle schedule | CIFAR-10 |
 
 ```bash
-pip install torchvision
-python examples/mnist.py
+pip install torchvision     # for the MNIST and CIFAR-10 datasets
+python examples/mlp.py
+python examples/llm.py
+python examples/resnet.py
 ```
+
+Training looks the same as on any other device:
 
 ```python
 device = torch.device("vulkan" if torchvulkan.is_available() else "cpu")
-model = SimpleNN().to(device)
-criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+model = ResNet().to(device)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
 for data, targets in train_loader:
     data, targets = data.to(device), targets.to(device)
@@ -122,45 +110,61 @@ for data, targets in train_loader:
 
 ## Benchmarks
 
-[`benchmark/benchmark.py`](benchmark/benchmark.py) times a combined forward + backward pass (`float16` on accelerators, `float32` on CPU) across every available backend, sweeping model size so parameter count grows from small up to as large as the `mnist`/`llm` subcommand's `--sizes` default reaches. The model is picked by subcommand; the harness (backend detection, subprocess isolation per backend, timing, plotting) is shared:
+[`benchmark/benchmark.py`](benchmark/benchmark.py) times a combined forward + backward pass (`float16` on accelerators, `float32` on CPU) on every available backend, sweeping each model's size. Each backend runs in its own subprocess. The models are the ones from the [examples](#examples):
 
-- `mnist` — the MNIST network from [`examples/mnist.py`](examples/mnist.py), sweeping hidden width from ~50K up to ~312M params.
-- `llm` — the small GPT-style transformer from [`examples/llm.py`](examples/llm.py), sweeping model width (`n_embd`) up to ~30M params.
-
-Compared against the platform-native GPU backend, the `vulkan` device tracks closely and stays orders of magnitude ahead of the CPU as the model grows:
+- `mlp`: sweeps the hidden width, up to ~141M parameters.
+- `llm`: sweeps the model width (`n_embd`), up to ~26M parameters.
+- `resnet`: sweeps the base channel width, up to ~6M parameters.
 
 <p align="center">
-  <img alt="Forward + backward pass time vs. model size on an NVIDIA GPU: vulkan tracks CUDA and beats CPU" src="media/benchmark-cuda.png" width="49%">
-  <img alt="Forward + backward pass time vs. model size on Apple Silicon: vulkan tracks MPS and beats CPU" src="media/benchmark-mps.png" width="49%">
+  <img alt="Forward + backward pass time vs. model size for the MLP, LLM and ResNet on an NVIDIA GPU: vulkan vs. CUDA and CPU" src="media/benchmark-cuda.png" width="100%">
 </p>
 
 <p align="center">
-  <i>Left: NVIDIA GPU (vulkan vs. CUDA). Right: Apple Silicon (vulkan vs. MPS). Both from the <code>mnist</code> subcommand.</i>
+  <i>Vulkan vs. CUDA vs. CPU.</i>
 </p>
 
 ```bash
 pip install matplotlib
-python benchmark/benchmark.py mnist
-python benchmark/benchmark.py llm
+python benchmark/benchmark.py all    # every model
 ```
 
 ## Python API
 
+`torchvulkan` mirrors the `torch.cuda` module, and is also reachable as `torch.vulkan`:
+
 ```python
 import torchvulkan
 
-torchvulkan.is_available()   # -> bool: a usable Vulkan device was found
-torchvulkan.device_count()   # -> int: number of Vulkan devices
-torchvulkan.synchronize()    # block until queued GPU work has finished
-torchvulkan.empty_cache()    # release cached device memory back to the driver
-torchvulkan.__version__      # package version
+# devices
+torchvulkan.is_available()            # -> bool: a usable Vulkan device was found
+torchvulkan.device_count()            # -> int: number of Vulkan devices (discrete GPUs first)
+torchvulkan.current_device()          # -> int: index of the current device
+torchvulkan.set_device(1)             # make "vulkan" mean "vulkan:1"
+torchvulkan.get_device_name()         # -> str
+torchvulkan.get_device_properties()   # -> name, total_memory, vendor_id, api_version, subgroup_size, ...
+torchvulkan.synchronize()             # block until queued GPU work has finished
+
+# memory
+torchvulkan.memory_allocated()        # bytes held by tensors
+torchvulkan.max_memory_allocated()    # peak since the last reset_peak_memory_stats()
+torchvulkan.memory_reserved()         # bytes held by the allocator, including its cache
+torchvulkan.memory_stats()            # -> dict
+torchvulkan.empty_cache()             # release cached device memory back to the driver
+
+# random numbers (per-device)
+torchvulkan.manual_seed(0)            # also: manual_seed_all, seed, seed_all, initial_seed
+torchvulkan.get_rng_state()           # also: set_rng_state, get_rng_state_all, set_rng_state_all
+
+torchvulkan.is_bf16_supported()       # -> bool: bfloat16 runs on the GPU
+torchvulkan.__version__               # package version
 ```
 
 Importing `torchvulkan` registers the backend, after which the device is addressed as `"vulkan"` / `torch.device("vulkan")` throughout PyTorch.
 
 ## CPU fallback
 
-By default, any operation, dtype, or tensor shape the backend doesn't implement natively runs on the **CPU** (with a one-time warning), so models keep working despite partial coverage.
+By default, any operation, dtype, or tensor shape the backend doesn't implement natively runs on the **CPU**, so models keep working despite partial coverage. The warning is printed once, for the first operation that falls back; call `torch.set_warn_always(True)` to see every one.
 
 Set `TORCHVULKAN_STRICT=1` to turn those silent fallbacks into errors. This is useful for finding which operators a workload actually needs:
 
@@ -168,10 +172,24 @@ Set `TORCHVULKAN_STRICT=1` to turn those silent fallbacks into errors. This is u
 TORCHVULKAN_STRICT=1 python your_script.py
 ```
 
+## Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `TORCHVULKAN_STRICT=1` | Raise an error instead of falling back to the CPU. |
+| `TORCHVULKAN_SYSTEM_VULKAN=1` | macOS: use the system Vulkan loader instead of the bundled MoltenVK. |
+| `TORCHVULKAN_VALIDATION=1` | Enable the Khronos validation layer, if it's installed. `=sync` also enables synchronization validation. On macOS this needs `TORCHVULKAN_SYSTEM_VULKAN=1`. |
+| `TORCHVULKAN_PROFILE=1` | Print each compute pipeline's driver statistics (such as register use) when it's compiled, on drivers that support `VK_KHR_pipeline_executable_properties`. |
+| `TORCHVULKAN_PIPELINE_CACHE=0` | Don't cache compiled pipelines between runs. By default they're cached in `%LOCALAPPDATA%\torchvulkan` on Windows and `$XDG_CACHE_HOME/torchvulkan` (or `~/.cache/torchvulkan`) elsewhere. |
+| `TORCHVULKAN_CACHE_DIR` | Directory for the pipeline cache. |
+
 ## Limitations
 
-- `bfloat16` runs on the GPU only on devices with `VK_KHR_shader_bfloat16`; elsewhere (including MoltenVK) it falls back to the CPU.
-- Complex dtypes are not supported; they fall back to the CPU.
+- `torch.compile` with the default Inductor backend doesn't support the `vulkan` device. Run eagerly, or use `torch.compile(model, backend="aot_eager")`.
+- Optimizers created with `fused=True` (such as `torch.optim.AdamW(..., fused=True)`) run their update on the CPU. The default (foreach) implementation runs on the GPU.
+- `float64` runs on the GPU only on devices with `shaderFloat64`; elsewhere it falls back to the CPU. Transcendental functions such as `exp`, `sin` and `tanh` are computed in `float32` precision for `float64` tensors.
+- `bfloat16` runs on the GPU only on devices with `VK_KHR_shader_bfloat16`; elsewhere it falls back to the CPU.
+- Complex tensors can live on the device and FFTs run on the GPU, but most complex arithmetic falls back to the CPU.
 - `torch>=2.10.0` only. The extension is compiled against 2.13.0 but has testing support for >=2.10.0.
 - APIs and coverage may change before `1.0.0`.
 
