@@ -1,0 +1,147 @@
+{
+ "backend": "rocm",
+ "cmd": [
+  "main.py",
+  "--listen",
+  "127.0.0.1",
+  "--port",
+  "8188",
+  "--disable-auto-launch",
+  "--output-directory",
+  "/out",
+  "--temp-directory",
+  "/tmp",
+  "--disable-dynamic-vram",
+  "--disable-pinned-memory",
+  "--reserve-vram",
+  "1.5"
+ ],
+ "runs": 10,
+ "res": 1024,
+ "steps": 8,
+ "unet": "z_image_turbo-Q6_K.gguf",
+ "text_encoder": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+ "vae": "ae.safetensors",
+ "status": "ok",
+ "prompts": [
+  {
+   "i": 0,
+   "seed": 1000,
+   "start": 1792763867.9144096,
+   "end": 1792763900.519282,
+   "seconds": 32.6,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 1,
+   "seed": 1001,
+   "start": 1792763900.5194983,
+   "end": 1792763921.5596032,
+   "seconds": 21.04,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 2,
+   "seed": 1002,
+   "start": 1792763921.559703,
+   "end": 1792763943.7193348,
+   "seconds": 22.16,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 3,
+   "seed": 1003,
+   "start": 1792763943.7194333,
+   "end": 1792763966.7681162,
+   "seconds": 23.05,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 4,
+   "seed": 1004,
+   "start": 1792763966.7682054,
+   "end": 1792763986.8065217,
+   "seconds": 20.04,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 5,
+   "seed": 1005,
+   "start": 1792763986.8066084,
+   "end": 1792764006.846511,
+   "seconds": 20.04,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 6,
+   "seed": 1006,
+   "start": 1792764006.846621,
+   "end": 1792764031.3943946,
+   "seconds": 24.55,
+   "sampling_s": 22,
+   "s_per_it": 2.75
+  },
+  {
+   "i": 7,
+   "seed": 1007,
+   "start": 1792764031.394499,
+   "end": 1792764052.936695,
+   "seconds": 21.54,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 8,
+   "seed": 1008,
+   "start": 1792764052.9368005,
+   "end": 1792764073.5427015,
+   "seconds": 20.61,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 9,
+   "seed": 1009,
+   "start": 1792764073.5428,
+   "end": 1792764094.08296,
+   "seconds": 20.54,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  }
+ ],
+ "versions": [
+  "backend=rocm",
+  "comfyui=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab",
+  "gguf_node=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105",
+  "python 3.14.8-1",
+  "comfy-aimdo                                0.6.0",
+  "comfy-angle                                0.1.1",
+  "comfy-kitchen                              0.2.40",
+  "comfyui-embedded-docs                      0.5.14",
+  "comfyui_frontend_package                   1.57.1",
+  "comfyui_workflow_templates                 0.11.96",
+  "comfyui-workflow-templates-core            0.3.387",
+  "comfyui-workflow-templates-json            0.1.122",
+  "comfyui-workflow-templates-media-api       0.3.84",
+  "comfyui-workflow-templates-media-assets-01 0.1.48",
+  "comfyui-workflow-templates-media-assets-02 0.1.23",
+  "comfyui-workflow-templates-media-image     0.3.160",
+  "comfyui-workflow-templates-media-other     0.3.229",
+  "comfyui-workflow-templates-media-video     0.3.101",
+  "torch                                      2.13.0+rocm7.1",
+  "torchsde                                   0.2.6",
+  "torchvision                                0.28.0+rocm7.1",
+  "triton-rocm                                3.7.1"
+ ],
+ "t_start": 1792763854.516198,
+ "device": "AMD Radeon Graphics (gfx1101)",
+ "startup_s": 7.0,
+ "t_end": 1792764095.9988403,
+ "torchvulkan_fallbacks": []
+}

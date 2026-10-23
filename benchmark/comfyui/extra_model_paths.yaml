@@ -1,0 +1,6 @@
+bench:
+  base_path: /models
+  unet: .
+  diffusion_models: .
+  text_encoders: .
+  vae: .

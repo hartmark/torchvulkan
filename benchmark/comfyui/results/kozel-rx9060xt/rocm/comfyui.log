@@ -1,0 +1,124 @@
+[32m[INFO][0m setup plugin alembic.autogenerate.schemas
+[32m[INFO][0m setup plugin alembic.autogenerate.tables
+[32m[INFO][0m setup plugin alembic.autogenerate.types
+[32m[INFO][0m setup plugin alembic.autogenerate.constraints
+[32m[INFO][0m setup plugin alembic.autogenerate.defaults
+[32m[INFO][0m setup plugin alembic.autogenerate.comments
+[32m[INFO][0m setup plugin alembic.ext.checkconstraint_byname
+[32m[INFO][0m Adding extra search path unet /models
+[32m[INFO][0m Adding extra search path diffusion_models /models
+[32m[INFO][0m Adding extra search path text_encoders /models
+[32m[INFO][0m Adding extra search path vae /models
+[32m[INFO][0m Setting output directory to: /out
+(null): No such file or directory
+(null): No such file or directory
+[32m[INFO][0m Found comfy_kitchen backend ascend: {'available': False, 'disabled': False, 'unavailable_reason': "torch-npu is not installed: No module named 'torch_npu'", 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend hip: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'convrot_w4a4_linear', 'dequantize_convrot_w4a4_weight', 'dequantize_int8_convrot_weight_dtype', 'dequantize_int8_simple_dtype', 'dequantize_per_tensor_fp8', 'dequantize_w4a8_int8_weight', 'fp16_conv3d', 'fp16_conv3d_out', 'fp16_linear', 'gemv_awq_w4a16', 'group_norm_silu_pad3d', 'group_norm_silu_pad3d_out', 'group_norm_stats3d', 'int8_linear', 'int8_linear_modulated', 'int8_linear_rms_modulated', 'na3d', 'quantize_and_rotate_rowwise', 'quantize_convrot_w4a4_weight', 'quantize_int8_convrot_weight', 'quantize_int8_rowwise', 'quantize_int8_tensorwise', 'quantize_per_tensor_fp8', 'quantize_svdquant_w4a4', 'quantize_w4a8_int8_weight', 'rms_adaln', 'rms_gated_residual', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'scaled_mm_svdquant_w4a4', 'sol_attn', 'stochastic_rounding_fp8', 'w4a8_int8_linear']}
+[32m[INFO][0m Found comfy_kitchen backend triton: {'available': True, 'disabled': True, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'int8_linear', 'na3d', 'quantize_and_rotate_rowwise', 'quantize_int8_rowwise', 'quantize_mxfp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'rms_adaln', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'w4a8_int8_linear']}
+[32m[INFO][0m Found comfy_kitchen backend eager: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'convrot_w4a4_linear', 'dequantize_convrot_w4a4_weight', 'dequantize_int8_convrot_weight', 'dequantize_int8_convrot_weight_dtype', 'dequantize_int8_embedding', 'dequantize_int8_simple', 'dequantize_int8_simple_dtype', 'dequantize_mxfp8', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'dequantize_w4a8_int8_weight', 'fp16_conv3d', 'fp16_conv3d_out', 'fp16_linear', 'gemv_awq_w4a16', 'group_norm_silu_pad3d', 'group_norm_silu_pad3d_out', 'group_norm_stats3d', 'int8_linear', 'int8_linear_modulated', 'int8_linear_rms_modulated', 'na3d', 'prepare_int4_weight_for_int8_linear', 'quantize_and_rotate_rowwise', 'quantize_convrot_w4a4_weight', 'quantize_int8_convrot_weight', 'quantize_int8_rowwise', 'quantize_int8_tensorwise', 'quantize_mxfp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'quantize_svdquant_w4a4', 'quantize_w4a8_int8_weight', 'rms_adaln', 'rms_gated_residual', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'rotate_int8_convrot_weight', 'scaled_mm_mxfp8', 'scaled_mm_nvfp4', 'scaled_mm_svdquant_w4a4', 'sol_attn', 'stochastic_rounding_fp8', 'w4a8_int8_linear', 'w4a8_packed_linear']}
+[32m[INFO][0m Found comfy_kitchen backend cuda: {'available': True, 'disabled': True, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'closest_point_on_mesh', 'connected_components', 'convrot_w4a4_linear', 'delaunay3d', 'dequantize_convrot_w4a4_weight', 'dequantize_int8_convrot_weight', 'dequantize_int8_convrot_weight_dtype', 'dequantize_int8_simple', 'dequantize_int8_simple_dtype', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'dequantize_w4a8_int8_weight', 'edge_collapse_checks', 'fp16_conv3d', 'fp16_conv3d_out', 'fp16_linear', 'gemv_awq_w4a16', 'group_norm_silu_pad3d', 'group_norm_silu_pad3d_out', 'group_norm_stats3d', 'mesh_bvh', 'min_cut', 'na3d', 'prepare_int4_weight_for_int8_linear', 'quantize_and_rotate_rowwise', 'quantize_convrot_w4a4_weight', 'quantize_int8_convrot_weight', 'quantize_int8_rowwise', 'quantize_int8_tensorwise', 'quantize_mxfp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'quantize_svdquant_w4a4', 'quantize_w4a8_int8_weight', 'rms_adaln', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'rotate_int8_convrot_weight', 'scaled_mm_svdquant_w4a4', 'sol_attn', 'stochastic_rounding_fp8', 'w4a8_int8_linear', 'w4a8_packed_linear']}
+[32m[INFO][0m Checkpoint files will always be loaded safely.
+[32m[INFO][0m Total VRAM 16304 MB, total RAM 31990 MB
+[32m[INFO][0m pytorch version: 2.13.0+rocm7.1
+[32m[INFO][0m Set: torch.backends.cudnn.enabled = False for better AMD performance.
+[32m[INFO][0m AMD arch: gfx1200
+[32m[INFO][0m ROCm version: (7, 1)
+[32m[INFO][0m Set vram state to: NORMAL_VRAM
+[32m[INFO][0m Device: cuda:0 AMD Radeon Graphics : native
+[32m[INFO][0m Using async weight offloading with 2 streams
+[32m[INFO][0m Using pytorch attention
+[32m[INFO][0m Python version: 3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]
+[32m[INFO][0m ComfyUI version: 0.42.0
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[1m[33m[WARNING][0m Dynamic vram disabled with argument. If you have any issues with dynamic vram enabled please give us a detailed reports as this argument will be removed soon. If you use gguf we recommend keeping dynamic vram enabled and using native ComfyUI model formats instead. ComfyUI native formats like fp8, int8 and w4a8 will be faster even if they are larger than your memory.
+[32m[INFO][0m Setting temp directory to: /tmp/temp
+[1m[33m[WARNING][0m ****** User settings have been changed to be stored on the server instead of browser storage. ******
+[1m[33m[WARNING][0m ****** For multi-user setups add the --multi-user CLI argument to enable multiple user profiles. ******
+[32m[INFO][0m comfyui-frontend-package version: 1.57.1
+[32m[INFO][0m comfyui-workflow-templates version: 0.11.96
+[32m[INFO][0m comfyui-embedded-docs version: 0.5.14
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[32m[INFO][0m [Prompt Server] web root: /venv/lib/python3.14/site-packages/comfyui_frontend_package/static
+[32m[INFO][0m Asset seeder disabled
+[32m[INFO][0m No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[32m[INFO][0m 
+Import times for custom nodes:
+[32m[INFO][0m    0.0 seconds: /ComfyUI/custom_nodes/websocket_image_save.py
+[32m[INFO][0m    0.1 seconds: /ComfyUI/custom_nodes/gguf
+[32m[INFO][0m 
+[32m[INFO][0m Using RAM pressure cache.
+[32m[INFO][0m Starting server
+
+[32m[INFO][0m To see the GUI go to: http://127.0.0.1:8188
+[32m[INFO][0m got prompt
+[32m[INFO][0m Model storage policy: fast_disk=False paths=['/models/ae.safetensors']
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+/ComfyUI/custom_nodes/gguf/pig.py:381: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  torch_tensor = torch.from_numpy(tensor.data)
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cpu, dtype: torch.float16
+[32m[INFO][0m Requested to load ZImageTEModel_
+[32m[INFO][0m loaded completely; 14862.80 MB usable, 5166.06 MB loaded, full load: True
+[32m[INFO][0m model weight dtype torch.bfloat16, manual cast: None
+[32m[INFO][0m model_type FLOW
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded completely; 9315.50 MB usable, 5720.00 MB loaded, full load: True
+gguf qtypes: F32 (145), Q8_0 (253)
+gguf qtypes: F32 (245), BF16 (28), Q6_K (180)
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:04<00:32,  4.64s/it] 25%|██▌       | 2/8 [00:06<00:18,  3.04s/it] 38%|███▊      | 3/8 [00:08<00:12,  2.50s/it] 50%|█████     | 4/8 [00:10<00:08,  2.23s/it] 62%|██████▎   | 5/8 [00:12<00:06,  2.09s/it] 75%|███████▌  | 6/8 [00:13<00:04,  2.00s/it] 88%|████████▊ | 7/8 [00:15<00:01,  1.94s/it]100%|██████████| 8/8 [00:17<00:00,  1.91s/it]100%|██████████| 8/8 [00:17<00:00,  2.20s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 2498.59 MB freed, 3221.43 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m loaded completely; 5032.38 MB usable, 159.87 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 45.09 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.84s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.94s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.89s/it] 50%|█████     | 4/8 [00:07<00:07,  1.87s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.93s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.90s/it] 88%|████████▊ | 7/8 [00:13<00:01,  1.88s/it]100%|██████████| 8/8 [00:15<00:00,  1.87s/it]100%|██████████| 8/8 [00:15<00:00,  1.89s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.47 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.84s/it] 25%|██▌       | 2/8 [00:03<00:10,  1.83s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.83s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.83s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.83s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.83s/it]100%|██████████| 8/8 [00:14<00:00,  1.83s/it]100%|██████████| 8/8 [00:14<00:00,  1.83s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 18.68 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.82s/it] 25%|██▌       | 2/8 [00:03<00:10,  1.83s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.83s/it] 50%|█████     | 4/8 [00:07<00:07,  1.83s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.83s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.64 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.85s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.85s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.84s/it] 50%|█████     | 4/8 [00:07<00:07,  1.85s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.85s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.83s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 18.83 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.82s/it] 25%|██▌       | 2/8 [00:03<00:10,  1.83s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.83s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.84s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.55 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.84s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.84s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.84s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.84s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.83s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.88 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.84s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.84s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.84s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.84s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.48 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.85s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.85s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.84s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.84s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 17.62 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m loaded completely; 14250.59 MB usable, 5720.00 MB loaded, full load: True
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:01<00:12,  1.84s/it] 25%|██▌       | 2/8 [00:03<00:11,  1.84s/it] 38%|███▊      | 3/8 [00:05<00:09,  1.84s/it] 50%|█████     | 4/8 [00:07<00:07,  1.84s/it] 62%|██████▎   | 5/8 [00:09<00:05,  1.84s/it] 75%|███████▌  | 6/8 [00:11<00:03,  1.84s/it] 88%|████████▊ | 7/8 [00:12<00:01,  1.84s/it]100%|██████████| 8/8 [00:14<00:00,  1.85s/it]100%|██████████| 8/8 [00:14<00:00,  1.84s/it]
+[32m[INFO][0m Unloaded partially: 2560.11 MB freed, 3159.91 MB remains loaded, 92.29 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 18.97 seconds[0m
+[32m[INFO][0m 
+Stopped server

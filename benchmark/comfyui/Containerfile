@@ -1,0 +1,29 @@
+# One image per backend: --build-arg BACKEND=rocm|vulkan
+# The image holds the OS, Mesa (vulkan) and ComfyUI. torch & co. are installed by `entry.sh setup`
+# into a bind-mounted venv (/venv), so the multi-GB ROCm wheels are written to disk once instead of
+# being committed as an image layer (which needs about twice the space).
+FROM docker.io/library/archlinux:latest
+
+ARG BACKEND
+ARG COMFYUI_REV=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab
+ARG GGUF_NODE_REV=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105
+
+RUN test "$BACKEND" = rocm -o "$BACKEND" = vulkan \
+ && pacman -Syu --noconfirm --needed python git \
+ && if [ "$BACKEND" = vulkan ]; then pacman -S --noconfirm --needed vulkan-radeon vulkan-icd-loader vulkan-tools; fi \
+ && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
+
+COPY comfyui-vulkan.patch /bench/
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI \
+ && git -C /ComfyUI checkout -q $COMFYUI_REV \
+ && git -C /ComfyUI apply /bench/comfyui-vulkan.patch \
+ && git clone https://github.com/calcuis/gguf.git /ComfyUI/custom_nodes/gguf \
+ && git -C /ComfyUI/custom_nodes/gguf checkout -q $GGUF_NODE_REV
+
+COPY extra_model_paths.yaml /ComfyUI/
+COPY entry.sh run_workflow.py /bench/
+RUN { echo "backend=$BACKEND"; echo "comfyui=$COMFYUI_REV"; echo "gguf_node=$GGUF_NODE_REV"; \
+      pacman -Q python mesa vulkan-radeon vulkan-icd-loader 2>/dev/null || true; } > /bench/image-versions.txt
+ENV BACKEND=$BACKEND PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /ComfyUI
+ENTRYPOINT ["/bench/entry.sh"]

@@ -1,0 +1,89 @@
+{
+ "backend": "vulkan",
+ "cmd": [
+  "main.py",
+  "--listen",
+  "127.0.0.1",
+  "--port",
+  "8188",
+  "--disable-auto-launch",
+  "--output-directory",
+  "/out",
+  "--temp-directory",
+  "/tmp",
+  "--vulkan",
+  "--disable-dynamic-vram",
+  "--disable-pinned-memory"
+ ],
+ "runs": 10,
+ "res": 1024,
+ "steps": 8,
+ "unet": "z_image_turbo-Q6_K.gguf",
+ "text_encoder": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+ "vae": "ae.safetensors",
+ "status": "fail",
+ "prompts": [
+  {
+   "i": 0,
+   "seed": 1000,
+   "start": 1792758452.1026697,
+   "end": 1792758566.2336328,
+   "seconds": 114.13,
+   "sampling_s": 43,
+   "s_per_it": 5.38
+  },
+  {
+   "i": 1,
+   "seed": 1001,
+   "start": 1792758566.2338233,
+   "end": 1792758679.899961,
+   "seconds": 113.67,
+   "sampling_s": 93,
+   "s_per_it": 11.62
+  },
+  {
+   "i": 2,
+   "seed": 1002,
+   "start": 1792758679.9001174,
+   "end": 1792758780.3454776,
+   "seconds": 100.45,
+   "sampling_s": 79,
+   "s_per_it": 9.88
+  }
+ ],
+ "versions": [
+  "backend=vulkan",
+  "comfyui=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab",
+  "gguf_node=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105",
+  "python 3.14.8-1",
+  "vulkan-radeon 1:26.2.5-1",
+  "vulkan-icd-loader 1.4.363.0-1",
+  "comfy-aimdo                                0.6.0",
+  "comfy-angle                                0.1.1",
+  "comfy-kitchen                              0.2.40",
+  "comfyui-embedded-docs                      0.5.14",
+  "comfyui_frontend_package                   1.57.1",
+  "comfyui_workflow_templates                 0.11.96",
+  "comfyui-workflow-templates-core            0.3.387",
+  "comfyui-workflow-templates-json            0.1.122",
+  "comfyui-workflow-templates-media-api       0.3.84",
+  "comfyui-workflow-templates-media-assets-01 0.1.48",
+  "comfyui-workflow-templates-media-assets-02 0.1.23",
+  "comfyui-workflow-templates-media-image     0.3.160",
+  "comfyui-workflow-templates-media-other     0.3.229",
+  "comfyui-workflow-templates-media-video     0.3.101",
+  "torch                                      2.13.0+cpu",
+  "torchsde                                   0.2.6",
+  "torchvision                                0.28.0+cpu",
+  "torchvulkan                                0.2.0"
+ ],
+ "t_start": 1792758442.6142213,
+ "device": "AMD Radeon RX 7800 XT (RADV NAVI32)",
+ "startup_s": 8.0,
+ "error": "prompt 3 failed: ,  ..., 0., 0., 0.],\\n          ...,\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.]],\\n\\n         [[0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          ...,\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.],\\n          [0., 0., 0.,  ..., 0., 0., 0.]]]]), 'downscale_ratio_spacial': 8}\"], \"denoise\": [1.0]}, \"current_outputs\": [\"9\", \"5\", \"7\", \"1\", \"8\", \"3\", \"4\", \"2\", \"6\", \"10\"], \"timestamp\": 1792758791204}]]",
+ "t_end": 1792758794.5271184,
+ "torchvulkan_fallbacks": [
+  "Out of memory on AMD Radeon RX 7800 XT ",
+  "Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode. "
+ ]
+}

@@ -1,0 +1,13 @@
+{
+ "hostname": "kozel",
+ "gpu": "Advanced Micro Devices, Inc. [AMD/ATI] Navi 44 [Radeon RX 9050 / 9060 XT] (rev c0)",
+ "vram_mb": 16304,
+ "cpu": "AMD Ryzen 7 2700X Eight-Core Processor",
+ "ram_gb": 31,
+ "kernel": "7.2.8-arch1-2",
+ "podman": "6.1.4",
+ "runs": 10,
+ "res": 1024,
+ "steps": 8,
+ "comfy_args": "--disable-dynamic-vram --disable-pinned-memory"
+}

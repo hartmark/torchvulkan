@@ -1,0 +1,132 @@
+diff --git a/comfy/cli_args.py b/comfy/cli_args.py
+index 135a899..25d1a44 100644
+--- a/comfy/cli_args.py
++++ b/comfy/cli_args.py
+@@ -113,6 +113,7 @@ parser.add_argument("--fp16-intermediates", action="store_true", help="Experimen
+ 
+ parser.add_argument("--force-channels-last", action="store_true", help="Force channels last format when inferencing the models.")
+ 
++parser.add_argument("--vulkan", action="store_true", help="Use the torchvulkan PrivateUse1 backend.")
+ parser.add_argument("--directml", type=int, nargs="?", metavar="DIRECTML_DEVICE", const=-1, help="Use torch-directml.")
+ 
+ parser.add_argument("--oneapi-device-selector", type=str, default=None, metavar="SELECTOR_STRING", help="Sets the oneAPI device(s) this instance will use.")
+diff --git a/comfy/model_management.py b/comfy/model_management.py
+index aa3e048..6c5d274 100644
+--- a/comfy/model_management.py
++++ b/comfy/model_management.py
+@@ -108,6 +108,28 @@ if args.deterministic:
+     logging.info("Using deterministic algorithms for pytorch")
+     torch.use_deterministic_algorithms(True, warn_only=True)
+ 
++vulkan_enabled = False
++if args.vulkan:
++    import torchvulkan
++    vulkan_enabled = True
++    logging.info("Using torchvulkan {} on {}".format(torchvulkan.__version__, torchvulkan.get_device_name()))
++
++def _vulkan_sysfs(name):
++    # The GPU is shared with other processes; torchvulkan only knows its own
++    # allocations, so read device-wide VRAM usage from amdgpu sysfs (the card
++    # with the most VRAM, i.e. the discrete GPU).
++    import glob
++    best = None
++    for d in glob.glob("/sys/class/drm/card[0-9]*/device"):
++        try:
++            total = int(open(d + "/mem_info_vram_total").read())
++            value = int(open(d + "/" + name).read())
++        except (OSError, ValueError):
++            continue
++        if best is None or total > best[0]:
++            best = (total, value)
++    return None if best is None else best[1]
++
+ directml_enabled = False
+ if args.directml is not None:
+     logging.warning("WARNING: torch-directml barely works, is very slow, has not been updated in over 1 year and might be removed soon, please don't use it, there are better options.")
+@@ -198,6 +220,8 @@ def get_torch_device():
+     if directml_enabled:
+         global directml_device
+         return directml_device
++    if vulkan_enabled:
++        return torch.device("vulkan", torchvulkan.current_device())
+     if cpu_state == CPUState.MPS:
+         return torch.device("mps")
+     if cpu_state == CPUState.CPU:
+@@ -325,6 +349,9 @@ def get_total_memory(dev=None, torch_total_too=False):
+         if directml_enabled:
+             mem_total = 1024 * 1024 * 1024 #TODO
+             mem_total_torch = mem_total
++        elif vulkan_enabled:
++            mem_total = _vulkan_sysfs("mem_info_vram_total") or torchvulkan.get_device_properties().total_memory
++            mem_total_torch = torchvulkan.memory_stats()['reserved_bytes.all.current']
+         elif is_intel_xpu():
+             stats = torch.xpu.memory_stats(dev)
+             mem_reserved = stats['reserved_bytes.all.current']
+@@ -611,6 +638,8 @@ def get_torch_device_name(device):
+             return "{} {} : {}".format(device, torch.cuda.get_device_name(device), allocator_backend)
+         elif device.type == "xpu":
+             return "{} {}".format(device, torch.xpu.get_device_name(device))
++        elif device.type == "vulkan":
++            return "{} {}".format(device, torchvulkan.get_device_name())
+         else:
+             return "{}".format(device.type)
+     elif is_intel_xpu():
+@@ -1828,6 +1857,16 @@ def get_free_memory(dev=None, torch_free_too=False):
+         if directml_enabled:
+             mem_free_total = 1024 * 1024 * 1024 #TODO
+             mem_free_torch = mem_free_total
++        elif vulkan_enabled:
++            stats = torchvulkan.memory_stats()
++            mem_active = stats['active_bytes.all.current']
++            mem_reserved = stats['reserved_bytes.all.current']
++            total = _vulkan_sysfs("mem_info_vram_total")
++            used = _vulkan_sysfs("mem_info_vram_used")
++            if total is None or used is None:
++                total, used = torchvulkan.get_device_properties().total_memory, mem_reserved
++            mem_free_torch = mem_reserved - mem_active
++            mem_free_total = max(0, total - used) + mem_free_torch
+         elif is_intel_xpu():
+             stats = torch.xpu.memory_stats(dev)
+             mem_active = stats['active_bytes.all.current']
+@@ -1919,6 +1958,9 @@ def should_use_fp16(device=None, model_params=0, prioritize_performance=True, ma
+     if is_directml_enabled():
+         return True
+ 
++    if vulkan_enabled:
++        return True
++
+     if (device is not None and is_device_mps(device)) or mps_mode():
+         return True
+ 
+@@ -1983,6 +2025,9 @@ def should_use_bf16(device=None, model_params=0, prioritize_performance=True, ma
+     if directml_enabled:
+         return False
+ 
++    if vulkan_enabled:
++        return torchvulkan.is_bf16_supported()
++
+     if (device is not None and is_device_mps(device)) or mps_mode():
+         if mac_version() < (14,):
+             return False
+@@ -2141,6 +2186,9 @@ def lora_compute_dtype(device):
+ def synchronize():
+     if cpu_mode():
+         return
++    if vulkan_enabled:
++        torchvulkan.synchronize()
++        return
+     if is_intel_xpu():
+         torch.xpu.synchronize()
+     elif is_ascend_npu():
+@@ -2152,7 +2200,10 @@ def soft_empty_cache(force=False):
+     if cpu_mode():
+         return
+     global cpu_state
+-    if cpu_state == CPUState.MPS:
++    if vulkan_enabled:
++        torchvulkan.synchronize()
++        torchvulkan.empty_cache()
++    elif cpu_state == CPUState.MPS:
+         torch.mps.empty_cache()
+     elif is_intel_xpu():
+         torch.xpu.synchronize()

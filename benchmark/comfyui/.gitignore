@@ -1,0 +1,4 @@
+models/
+venvs/
+__pycache__/
+*.part

@@ -1,0 +1,251 @@
+[32m[INFO][0m setup plugin alembic.autogenerate.schemas
+[32m[INFO][0m setup plugin alembic.autogenerate.tables
+[32m[INFO][0m setup plugin alembic.autogenerate.types
+[32m[INFO][0m setup plugin alembic.autogenerate.constraints
+[32m[INFO][0m setup plugin alembic.autogenerate.defaults
+[32m[INFO][0m setup plugin alembic.autogenerate.comments
+[32m[INFO][0m setup plugin alembic.ext.checkconstraint_byname
+[32m[INFO][0m Adding extra search path unet /models
+[32m[INFO][0m Adding extra search path diffusion_models /models
+[32m[INFO][0m Adding extra search path text_encoders /models
+[32m[INFO][0m Adding extra search path vae /models
+[32m[INFO][0m Setting output directory to: /out
+[32m[INFO][0m Found comfy_kitchen backend triton: {'available': False, 'disabled': True, 'unavailable_reason': "ImportError: No module named 'triton'", 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend hip: {'available': False, 'disabled': False, 'unavailable_reason': 'PyTorch ROCm/HIP runtime not available', 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend cuda: {'available': False, 'disabled': True, 'unavailable_reason': 'CUDA not available on this system', 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend ascend: {'available': False, 'disabled': False, 'unavailable_reason': "torch-npu is not installed: No module named 'torch_npu'", 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend eager: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'convrot_w4a4_linear', 'dequantize_convrot_w4a4_weight', 'dequantize_int8_convrot_weight', 'dequantize_int8_convrot_weight_dtype', 'dequantize_int8_embedding', 'dequantize_int8_simple', 'dequantize_int8_simple_dtype', 'dequantize_mxfp8', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'dequantize_w4a8_int8_weight', 'fp16_conv3d', 'fp16_conv3d_out', 'fp16_linear', 'gemv_awq_w4a16', 'group_norm_silu_pad3d', 'group_norm_silu_pad3d_out', 'group_norm_stats3d', 'int8_linear', 'int8_linear_modulated', 'int8_linear_rms_modulated', 'na3d', 'prepare_int4_weight_for_int8_linear', 'quantize_and_rotate_rowwise', 'quantize_convrot_w4a4_weight', 'quantize_int8_convrot_weight', 'quantize_int8_rowwise', 'quantize_int8_tensorwise', 'quantize_mxfp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'quantize_svdquant_w4a4', 'quantize_w4a8_int8_weight', 'rms_adaln', 'rms_gated_residual', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'rotate_int8_convrot_weight', 'scaled_mm_mxfp8', 'scaled_mm_nvfp4', 'scaled_mm_svdquant_w4a4', 'sol_attn', 'stochastic_rounding_fp8', 'w4a8_int8_linear', 'w4a8_packed_linear']}
+[32m[INFO][0m Checkpoint files will always be loaded safely.
+[32m[INFO][0m Using torchvulkan 0.2.0 on AMD Radeon RX 7800 XT (RADV NAVI32)
+[32m[INFO][0m Total VRAM 16368 MB, total RAM 64199 MB
+[32m[INFO][0m pytorch version: 2.13.0+cpu
+[32m[INFO][0m Set vram state to: NORMAL_VRAM
+[32m[INFO][0m Device: vulkan:0 AMD Radeon RX 7800 XT (RADV NAVI32)
+[32m[INFO][0m Using sub quadratic optimization for attention, if you have memory or speed issues try using: --use-split-cross-attention
+[32m[INFO][0m Python version: 3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]
+[32m[INFO][0m ComfyUI version: 0.42.0
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[1m[33m[WARNING][0m Dynamic vram disabled with argument. If you have any issues with dynamic vram enabled please give us a detailed reports as this argument will be removed soon. If you use gguf we recommend keeping dynamic vram enabled and using native ComfyUI model formats instead. ComfyUI native formats like fp8, int8 and w4a8 will be faster even if they are larger than your memory.
+[32m[INFO][0m Setting temp directory to: /tmp/temp
+[1m[33m[WARNING][0m ****** User settings have been changed to be stored on the server instead of browser storage. ******
+[1m[33m[WARNING][0m ****** For multi-user setups add the --multi-user CLI argument to enable multiple user profiles. ******
+[32m[INFO][0m comfyui-frontend-package version: 1.57.1
+[32m[INFO][0m comfyui-workflow-templates version: 0.11.96
+[32m[INFO][0m comfyui-embedded-docs version: 0.5.14
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[32m[INFO][0m [Prompt Server] web root: /venv/lib/python3.14/site-packages/comfyui_frontend_package/static
+[32m[INFO][0m Asset seeder disabled
+[32m[INFO][0m No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[32m[INFO][0m 
+Import times for custom nodes:
+[32m[INFO][0m    0.0 seconds: /ComfyUI/custom_nodes/websocket_image_save.py
+[32m[INFO][0m    0.1 seconds: /ComfyUI/custom_nodes/gguf
+[32m[INFO][0m 
+[32m[INFO][0m Using RAM pressure cache.
+[32m[INFO][0m Starting server
+
+[32m[INFO][0m To see the GUI go to: http://127.0.0.1:8188
+[32m[INFO][0m got prompt
+[32m[INFO][0m Model storage policy: fast_disk=False paths=['/models/ae.safetensors']
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m VAE load device: vulkan:0, offload device: cpu, dtype: torch.float32
+/ComfyUI/custom_nodes/gguf/pig.py:381: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  torch_tensor = torch.from_numpy(tensor.data)
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m CLIP/text encoder model load device: vulkan:0, offload device: cpu, current: cpu, dtype: torch.float16
+[32m[INFO][0m Requested to load ZImageTEModel_
+[32m[INFO][0m loaded completely; 6255.52 MB usable, 5166.06 MB loaded, full load: True
+/ComfyUI/comfy/text_encoders/llama.py:842: UserWarning: torchvulkan [NOT IMPLEMENTED]: Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode. (Triggered internally at /project/src/api/registration.cpp:10.)
+  x = torch.add(residual, x, out=output)
+[32m[INFO][0m model weight dtype torch.float16, manual cast: None
+[32m[INFO][0m model_type FLOW
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m 0 models unloaded.
+[32m[INFO][0m loaded partially; 4077.97 MB usable, 4047.21 MB loaded, 1672.79 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+gguf qtypes: F32 (145), Q8_0 (253)
+gguf qtypes: F32 (245), BF16 (28), Q6_K (180)
+Attempting to release mmap (240)
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:05<00:41,  6.00s/it] 25%|██▌       | 2/8 [00:11<00:33,  5.58s/it] 38%|███▊      | 3/8 [00:16<00:26,  5.38s/it] 50%|█████     | 4/8 [00:21<00:21,  5.29s/it] 62%|██████▎   | 5/8 [00:26<00:15,  5.24s/it] 75%|███████▌  | 6/8 [00:31<00:10,  5.21s/it] 88%|████████▊ | 7/8 [00:37<00:05,  5.19s/it]100%|██████████| 8/8 [00:42<00:00,  5.18s/it]100%|██████████| 8/8 [00:42<00:00,  5.27s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m 0 models unloaded.
+[32m[INFO][0m loaded partially; 0.00 MB usable, 0.00 MB loaded, 319.75 MB offloaded, 9.00 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 100.77 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m 0 models unloaded.
+[32m[INFO][0m loaded partially; 4973.46 MB usable, 4942.69 MB loaded, 777.30 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:05<00:35,  5.09s/it] 25%|██▌       | 2/8 [00:10<00:30,  5.11s/it] 38%|███▊      | 3/8 [00:15<00:25,  5.09s/it] 50%|█████     | 4/8 [00:20<00:20,  5.07s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:25<00:15,  5.12s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [00:30<00:10,  5.14s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [00:35<00:05,  5.16s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [00:41<00:00,  5.16s/it]100%|██████████| 8/8 [00:41<00:00,  5.14s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m 0 models unloaded.
+[32m[INFO][0m loaded partially; 0.00 MB usable, 0.00 MB loaded, 319.75 MB offloaded, 9.00 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m [32mPrompt executed in 65.23 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 5696.26 MB usable, 5693.12 MB loaded, 26.87 MB offloaded, 3.13 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s]  0%|          | 0/8 [00:00<?, ?it/s]
+[1m[31m[ERROR][0m !!! Exception during processing !!! torchvulkan [ERROR]: Out of memory on AMD Radeon RX 7800 XT (RADV NAVI32). Tried to allocate 268435456 bytes with 7516192768 of 7635114188 bytes in use.
+[1m[31m[ERROR][0m Traceback (most recent call last):
+  File "/ComfyUI/execution.py", line 548, in execute
+    output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)
+                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/execution.py", line 353, in get_output_data
+    return_values = await _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, obj.FUNCTION, allow_interrupt=True, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/execution.py", line 327, in _async_map_node_over_list
+    await process_inputs(input_dict, i)
+  File "/ComfyUI/execution.py", line 315, in process_inputs
+    result = f(**inputs)
+  File "/ComfyUI/nodes.py", line 1633, in sample
+    return common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=denoise)
+  File "/ComfyUI/nodes.py", line 1597, in common_ksampler
+    samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
+                                  denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
+                                  force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+  File "/ComfyUI/comfy/sample.py", line 82, in sample
+    samples = sampler.sample(noise, positive, negative, cfg=cfg, latent_image=latent_image, start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, denoise_mask=noise_mask, sigmas=sigmas, callback=callback, disable_pbar=disable_pbar, seed=seed)
+  File "/ComfyUI/comfy/samplers.py", line 1464, in sample
+    return sample(self.model, noise, positive, negative, cfg, self.device, sampler, sigmas, self.model_options, latent_image=latent_image, denoise_mask=denoise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+  File "/ComfyUI/comfy/samplers.py", line 1354, in sample
+    return cfg_guider.sample(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 1336, in sample
+    output = executor.execute(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed, latent_shapes=latent_shapes)
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 1263, in outer_sample
+    output = self.inner_sample(noise, latent_image, device, sampler, sigmas, denoise_mask, callback, disable_pbar, seed, latent_shapes=latent_shapes)
+  File "/ComfyUI/comfy/samplers.py", line 1238, in inner_sample
+    samples = executor.execute(self, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 1005, in sample
+    samples = self.sampler_function(model_k, noise, sigmas, extra_args=extra_args, callback=k_callback, disable=disable_pbar, **self.extra_options)
+  File "/venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/ComfyUI/comfy/k_diffusion/sampling.py", line 1528, in sample_res_multistep
+    return res_multistep(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, s_noise=s_noise, noise_sampler=noise_sampler, eta=0., cfg_pp=False)
+  File "/venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/ComfyUI/comfy/k_diffusion/sampling.py", line 1486, in res_multistep
+    denoised = model(x, sigmas[i] * s_in, **extra_args)
+  File "/ComfyUI/comfy/samplers.py", line 640, in __call__
+    out = self.inner_model(x, sigma, model_options=model_options, seed=seed)
+  File "/ComfyUI/comfy/samplers.py", line 1208, in __call__
+    return self.outer_predict_noise(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 1215, in outer_predict_noise
+    ).execute(x, timestep, model_options, seed)
+      ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 1218, in predict_noise
+    return sampling_function(self.inner_model, x, timestep, self.conds.get("negative", None), self.conds.get("positive", None), self.cfg, model_options=model_options, seed=seed)
+  File "/ComfyUI/comfy/samplers.py", line 620, in sampling_function
+    out = calc_cond_batch(model, conds, x, timestep, model_options)
+  File "/ComfyUI/comfy/samplers.py", line 211, in calc_cond_batch
+    return _calc_cond_batch_outer(model, conds, x_in, timestep, model_options)
+  File "/ComfyUI/comfy/samplers.py", line 219, in _calc_cond_batch_outer
+    return executor.execute(model, conds, x_in, timestep, model_options)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/samplers.py", line 335, in _calc_cond_batch
+    output = model.apply_model(input_x, timestep_, **c).chunk(batch_chunks)
+             ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/model_base.py", line 213, in apply_model
+    return comfy.patcher_extension.WrapperExecutor.new_class_executor(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ...<2 lines>...
+        comfy.patcher_extension.get_all_wrappers(comfy.patcher_extension.WrappersMP.APPLY_MODEL, transformer_options)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ).execute(x, t, c_concat, c_crossattn, control, transformer_options, **kwargs)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/model_base.py", line 257, in _apply_model
+    model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/ComfyUI/comfy/ldm/lumina/model.py", line 835, in forward
+    return comfy.patcher_extension.WrapperExecutor.new_class_executor(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ...<2 lines>...
+        comfy.patcher_extension.get_all_wrappers(comfy.patcher_extension.WrappersMP.DIFFUSION_MODEL, kwargs.get("transformer_options", {}))
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ).execute(x, timesteps, context, num_tokens, attention_mask, **kwargs)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/patcher_extension.py", line 113, in execute
+    return self.original(*args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/ComfyUI/comfy/ldm/lumina/model.py", line 881, in _forward
+    img = layer(img, mask, freqs_cis, adaln_input, timestep_zero_index=timestep_zero_index, transformer_options=transformer_options)
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/ComfyUI/comfy/ldm/lumina/model.py", line 343, in forward
+    clamp_fp16(self.attention(
+               ~~~~~~~~~~~~~~^
+        modulate(self.attention_norm1(x), scale_msa, timestep_zero_index=timestep_zero_index),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        transformer_options=transformer_options,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ))), timestep_zero_index=timestep_zero_index
+    ^
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/venv/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/ComfyUI/comfy/ldm/lumina/model.py", line 182, in forward
+    output = optimized_attention_masked(xq, xk, xv, self.n_local_heads, x_mask, skip_reshape=True, transformer_options=transformer_options, preferred_attention=self.comfy_attention)
+  File "/ComfyUI/comfy/ldm/modules/attention.py", line 248, in wrapper
+    return func(*args, **kwargs)
+  File "/ComfyUI/comfy/ldm/modules/attention.py", line 379, in attention_sub_quad
+    hidden_states = efficient_dot_product_attention(
+        query,
+    ...<7 lines>...
+        mask=mask,
+    )
+  File "/ComfyUI/comfy/ldm/modules/sub_quadratic_attention.py", line 269, in efficient_dot_product_attention
+    compute_query_chunk_attn(
+    ~~~~~~~~~~~~~~~~~~~~~~~~^
+        query=get_query_chunk(i * query_chunk_size),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        mask=get_mask_chunk(i * query_chunk_size)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ) for i in range(math.ceil(q_tokens / query_chunk_size))
+    ^
+  File "/ComfyUI/comfy/ldm/modules/sub_quadratic_attention.py", line 159, in _get_attention_scores_no_kv_chunking
+    attn_scores = torch.baddbmm(
+        torch.empty(1, 1, 1, device=query.device, dtype=query.dtype),
+    ...<3 lines>...
+        beta=0,
+    )
+torch.OutOfMemoryError: torchvulkan [ERROR]: Out of memory on AMD Radeon RX 7800 XT (RADV NAVI32). Tried to allocate 268435456 bytes with 7516192768 of 7635114188 bytes in use.
+
+[32m[INFO][0m Memory summary:
+
+[1m[31m[ERROR][0m Got an OOM, unloading all loaded models.
+[32m[INFO][0m [32mPrompt executed in 5.83 seconds[0m
+[32m[INFO][0m 
+Stopped server
