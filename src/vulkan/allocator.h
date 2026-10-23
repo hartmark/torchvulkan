@@ -26,6 +26,7 @@ public:
 
 private:
     static VulkanBuffer* createBuffer(DeviceContext* device, size_t size, MemoryUsage usage);
+    static VulkanBuffer* unsafeCreateBuffer(DeviceContext* device, size_t size, MemoryUsage usage);
 };
 
 extern VulkanAllocator globalVulkanAllocator;

@@ -84,7 +84,12 @@ VulkanBuffer* VulkanAllocator::createBuffer(DeviceContext* device, size_t size, 
 {
     size_t rounded = VulkanCache::roundBufferSize(size);
     if (usage == MemoryUsage::DEVICE_ONLY && device->memoryUsage() + rounded > device->memoryBudget()) return nullptr;
+    return unsafeCreateBuffer(device, size, usage);
+}
 
+VulkanBuffer* VulkanAllocator::unsafeCreateBuffer(DeviceContext* device, size_t size, MemoryUsage usage)
+{
+    size_t rounded = VulkanCache::roundBufferSize(size);
     auto buffer = std::make_unique<VulkanBuffer>(device);
     if (buffer->createBuffer(rounded, usage) != VK_SUCCESS) return nullptr;
     return buffer.release();
@@ -96,7 +101,7 @@ VulkanBuffer* VulkanAllocator::allocateBuffer(DeviceContext* device, size_t size
     if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
     device->shader_manager->flushAndReleaseBuffers();
-    if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
+    if (VulkanBuffer* buffer = unsafeCreateBuffer(device, size, usage)) return buffer;
 
     size_t budget = device->memoryBudget();
     size_t used = device->memoryUsage();
