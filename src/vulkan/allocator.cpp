@@ -1,7 +1,9 @@
 #include "allocator.h"
 #include "shader.h"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 VulkanAllocator globalVulkanAllocator;
 REGISTER_ALLOCATOR(c10::DeviceType::PrivateUse1, &globalVulkanAllocator);
@@ -83,7 +85,10 @@ void VulkanAllocator::copy_device_to_device(void* dest, uint64_t dest_offset, co
 VulkanBuffer* VulkanAllocator::createBuffer(DeviceContext* device, size_t size, MemoryUsage usage)
 {
     size_t rounded = VulkanCache::roundBufferSize(size);
-    if (usage == MemoryUsage::DEVICE_ONLY && device->memoryUsage() + rounded > device->memoryBudget()) return nullptr;
+    if (usage == MemoryUsage::DEVICE_ONLY && device->memoryUsage() + rounded > device->memoryBudget()) {
+        device->refreshMemoryBudget();
+        if (device->memoryUsage() + rounded > device->memoryBudget()) return nullptr;
+    }
 
     auto buffer = std::make_unique<VulkanBuffer>(device);
     if (buffer->createBuffer(rounded, usage) != VK_SUCCESS) return nullptr;
@@ -96,6 +101,12 @@ VulkanBuffer* VulkanAllocator::allocateBuffer(DeviceContext* device, size_t size
     if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
     device->shader_manager->flushAndReleaseBuffers();
+    // The kernel releases the freed memory asynchronously, and the driver's budget counts it until it
+    // has; retry with a short backoff (at most ~255 ms, only on this out-of-memory path).
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1 << attempt));
+    }
     if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
     size_t budget = device->memoryBudget();

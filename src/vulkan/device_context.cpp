@@ -15,6 +15,14 @@ size_t DeviceContext::memoryBudget()
     return static_cast<size_t>(budgets[vram_heap_index].budget * VRAM_USAGE_LIMIT);
 }
 
+// VMA only re-reads VK_EXT_memory_budget after ~30 vkAllocateMemory/vkFreeMemory calls (or on
+// vmaSetCurrentFrameIndex). Allocations that createBuffer() refuses never reach VMA, so without an
+// explicit refresh a budget sampled while the GPU was full stays in effect after memory was freed.
+void DeviceContext::refreshMemoryBudget()
+{
+    vmaSetCurrentFrameIndex(allocator, budget_frame.fetch_add(1) + 1);
+}
+
 size_t DeviceContext::memoryUsage()
 {
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
