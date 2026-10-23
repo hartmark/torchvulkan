@@ -150,6 +150,7 @@ torchvulkan.memory_allocated()        # bytes held by tensors
 torchvulkan.max_memory_allocated()    # peak since the last reset_peak_memory_stats()
 torchvulkan.memory_reserved()         # bytes held by the allocator, including its cache
 torchvulkan.memory_stats()            # -> dict
+torchvulkan.mem_get_info()            # -> (free, total): what can be allocated given the budget
 torchvulkan.empty_cache()             # release cached device memory back to the driver
 
 # random numbers (per-device)

@@ -29,6 +29,13 @@ size_t DeviceContext::memoryTotal()
     return props->memoryHeaps[vram_heap_index].size;
 }
 
+size_t DeviceContext::memoryFree()
+{
+    size_t budget = memoryBudget();
+    size_t used = memoryUsage();
+    return budget > used ? budget - used : 0;
+}
+
 void DeviceContext::recordAllocation(size_t bytes)
 {
     size_t now = allocated_bytes.fetch_add(bytes) + bytes;
