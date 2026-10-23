@@ -1,6 +1,8 @@
 #include <torch/extension.h>
 #include <ATen/SDPBackend.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/ops/_native_multi_head_attention_native.h>
+#include <ATen/ops/_transformer_encoder_layer_fwd_native.h>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -1457,4 +1459,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_masked_softmax", &masked_softmax_vulkan);
     m.impl("_masked_softmax_backward", &masked_softmax_backward_vulkan);
     m.impl("_transform_bias_rescale_qkv", &transform_bias_rescale_qkv_vulkan);
+    m.impl("_native_multi_head_attention", &at::native::native_multi_head_attention_cpu);
+    m.impl("_transformer_encoder_layer_fwd", &at::native::transformer_encoder_layer_forward);
 }
