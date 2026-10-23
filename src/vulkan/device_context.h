@@ -66,6 +66,7 @@ struct DeviceContext {
     std::atomic<size_t> allocated_bytes{0};
     std::atomic<size_t> peak_allocated_bytes{0};
     DispatchStats stats;
+    std::atomic<uint32_t> budget_frame{0};
 
     DeviceContext() { cache.setOwner(this); }
     DeviceContext(const DeviceContext&) = delete;
@@ -73,6 +74,7 @@ struct DeviceContext {
     ~DeviceContext();
 
     size_t memoryBudget();
+    void refreshMemoryBudget();
     size_t memoryUsage();
     size_t memoryTotal();
     void recordAllocation(size_t bytes);
