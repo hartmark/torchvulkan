@@ -1,0 +1,150 @@
+{
+ "backend": "vulkan",
+ "cmd": [
+  "main.py",
+  "--listen",
+  "127.0.0.1",
+  "--port",
+  "8188",
+  "--disable-auto-launch",
+  "--output-directory",
+  "/out",
+  "--temp-directory",
+  "/tmp",
+  "--vulkan",
+  "--disable-dynamic-vram",
+  "--disable-pinned-memory"
+ ],
+ "runs": 10,
+ "res": 1024,
+ "steps": 8,
+ "unet": "z_image_turbo-Q6_K.gguf",
+ "text_encoder": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+ "vae": "ae.safetensors",
+ "status": "ok",
+ "prompts": [
+  {
+   "i": 0,
+   "seed": 1000,
+   "start": 1792769410.3514585,
+   "end": 1792769523.5367362,
+   "seconds": 113.19,
+   "sampling_s": 41,
+   "s_per_it": 5.12
+  },
+  {
+   "i": 1,
+   "seed": 1001,
+   "start": 1792769523.5380104,
+   "end": 1792769582.8631485,
+   "seconds": 59.33,
+   "sampling_s": 39,
+   "s_per_it": 4.88
+  },
+  {
+   "i": 2,
+   "seed": 1002,
+   "start": 1792769582.8634152,
+   "end": 1792769642.0175047,
+   "seconds": 59.15,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 3,
+   "seed": 1003,
+   "start": 1792769642.017644,
+   "end": 1792769699.219432,
+   "seconds": 57.2,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 4,
+   "seed": 1004,
+   "start": 1792769699.2195506,
+   "end": 1792769756.3903506,
+   "seconds": 57.17,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 5,
+   "seed": 1005,
+   "start": 1792769756.3904903,
+   "end": 1792769814.1744735,
+   "seconds": 57.78,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 6,
+   "seed": 1006,
+   "start": 1792769814.1746128,
+   "end": 1792769871.287296,
+   "seconds": 57.11,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 7,
+   "seed": 1007,
+   "start": 1792769871.287399,
+   "end": 1792769926.9015408,
+   "seconds": 55.61,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 8,
+   "seed": 1008,
+   "start": 1792769926.901721,
+   "end": 1792769980.5166633,
+   "seconds": 53.61,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  },
+  {
+   "i": 9,
+   "seed": 1009,
+   "start": 1792769980.5168045,
+   "end": 1792770035.621417,
+   "seconds": 55.1,
+   "sampling_s": 40,
+   "s_per_it": 5.0
+  }
+ ],
+ "versions": [
+  "backend=vulkan",
+  "comfyui=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab",
+  "gguf_node=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105",
+  "python 3.14.8-1",
+  "vulkan-radeon 1:26.2.5-1",
+  "vulkan-icd-loader 1.4.363.0-1",
+  "comfy-aimdo                                0.6.0",
+  "comfy-angle                                0.1.1",
+  "comfy-kitchen                              0.2.40",
+  "comfyui-embedded-docs                      0.5.14",
+  "comfyui_frontend_package                   1.57.1",
+  "comfyui_workflow_templates                 0.11.96",
+  "comfyui-workflow-templates-core            0.3.387",
+  "comfyui-workflow-templates-json            0.1.122",
+  "comfyui-workflow-templates-media-api       0.3.84",
+  "comfyui-workflow-templates-media-assets-01 0.1.48",
+  "comfyui-workflow-templates-media-assets-02 0.1.23",
+  "comfyui-workflow-templates-media-image     0.3.160",
+  "comfyui-workflow-templates-media-other     0.3.229",
+  "comfyui-workflow-templates-media-video     0.3.101",
+  "torch                                      2.13.0+cpu",
+  "torchsde                                   0.2.6",
+  "torchvision                                0.28.0+cpu",
+  "torchvulkan                                0.2.0+budgetfix"
+ ],
+ "t_start": 1792769401.107649,
+ "device": "AMD Radeon RX 7800 XT (RADV NAVI32)",
+ "startup_s": 8.0,
+ "t_end": 1792770037.9391234,
+ "torchvulkan_fallbacks": [
+  "Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode. "
+ ]
+}

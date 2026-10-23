@@ -78,6 +78,44 @@ running, the same container could allocate 12.75 GiB in 256 MiB blocks before hi
 The ROCm runs on the same machine never ran out of memory. The only CPU fallback logged was
 `aten::add.out`.
 
+### The RX 7800 XT out-of-memory errors: stale Vulkan memory budget
+
+`repro_oom.py` and `repro_budget_lag.py` reproduce it without ComfyUI. torchvulkan refuses a
+device allocation when `usage + size > 0.95 × budget`, with both values from VMA's
+`vmaGetHeapBudgets` (`VK_EXT_memory_budget`). VMA only re-reads the driver's budget after ~30
+`vkAllocateMemory`/`vkFreeMemory` calls, and refused allocations never reach VMA, so a budget sampled
+at a bad moment (e.g. right after torchvulkan released its buffer cache, while the kernel still
+counted the freed memory) stays in effect:
+
+```
+resident 4.00 GiB; usage/budget (4.125, 12.99)
+cache filled with 31 buffers (6.2 GiB); usage/budget (4.125, 9.25)
+t+ 4.00s after empty_cache: usage  4.12  budget(x0.95)  9.25  gpu_vram  6.20   <- memory is free, budget isn't
+after 32 extra alloc/free ops: usage  4.12  budget(x0.95) 12.99                <- VMA refetched
+```
+
+The fix (branch [`fix/refresh-memory-budget`](https://github.com/hartmark/torchvulkan/tree/fix/refresh-memory-budget),
+22 lines in `src/vulkan/`) calls `vmaSetCurrentFrameIndex()` to refresh the budget before refusing
+an allocation, and after `flushAndReleaseBuffers()` retries with a short backoff (≤ ~255 ms, only on
+the out-of-memory path). Same RX 7800 XT with the KDE desktop running, 10 images, default flags:
+
+| run | torchvulkan | images OK | warm image | sampling |
+|---|---|---|---|---|
+| `bernard-rx7800xt-noreserve-oom` | 0.2.0 | 3/10, OOM | 107 s | 10.75 s/it |
+| `bernard-rx7800xt-budgetfix` | 0.2.0 + fix | **10/10** | 54.7 s | 5.0 s/it |
+| `bernard-rx7800xt-budgetfix-ramload` (RAM hog, MemAvailable down to 6.5 GB) | 0.2.0 + fix | 10/10 | 57.2 s | 5.0 s/it |
+| `bernard-rx7800xt-budgetfix-vramload` (2nd process holding 3 GiB VRAM) | 0.2.0 + fix | 10/10 | 108.9 s | 11.1 s/it |
+| `bernard-rx7800xt-rocm-ramload` (RAM hog ²) | ROCm 7.1 | 10/10 | 20.2 s | 2.25 s/it |
+
+² the RAM hog only touches one page per MiB, so the kernel had swapped most of it out by the ROCm
+run (MemAvailable min 26 GB); treat that row as "without RAM pressure".
+
+With the fix the budget follows other processes: a 4 GiB VRAM hog lowers it from 12.99 to 9.19 GiB
+and it returns to 12.99 when the hog exits (`repro_oom.py --step-sleep`). Without it, the same
+reproducer fails at step 2 (budget stuck at 7.7 GiB). A related observation: torchvulkan's buffer
+cache keeps every freed buffer until an allocation fails, so a running torchvulkan process holds
+VRAM up to its budget and a second GPU process that starts later can run out of memory.
+
 All four first images (same seed) are visually identical:
 ![first images](results/first-images-kozel-rocm-vulkan-bernard-rocm-vulkan.png)
 (RX 9060 XT ROCm, RX 9060 XT Vulkan, RX 7800 XT ROCm, RX 7800 XT Vulkan)

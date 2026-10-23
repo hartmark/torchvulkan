@@ -1,0 +1,538 @@
+[32m[INFO][0m setup plugin alembic.autogenerate.schemas
+[32m[INFO][0m setup plugin alembic.autogenerate.tables
+[32m[INFO][0m setup plugin alembic.autogenerate.types
+[32m[INFO][0m setup plugin alembic.autogenerate.constraints
+[32m[INFO][0m setup plugin alembic.autogenerate.defaults
+[32m[INFO][0m setup plugin alembic.autogenerate.comments
+[32m[INFO][0m setup plugin alembic.ext.checkconstraint_byname
+[32m[INFO][0m Adding extra search path unet /models
+[32m[INFO][0m Adding extra search path diffusion_models /models
+[32m[INFO][0m Adding extra search path text_encoders /models
+[32m[INFO][0m Adding extra search path vae /models
+[32m[INFO][0m Setting output directory to: /out
+[32m[INFO][0m Found comfy_kitchen backend hip: {'available': False, 'disabled': False, 'unavailable_reason': 'PyTorch ROCm/HIP runtime not available', 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend triton: {'available': False, 'disabled': True, 'unavailable_reason': "ImportError: No module named 'triton'", 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend eager: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['adaln', 'apply_rope', 'apply_rope1', 'apply_rope1_', 'apply_rope_', 'apply_rope_split_half', 'apply_rope_split_half1', 'apply_rope_split_half1_', 'apply_rope_split_half_', 'convrot_w4a4_linear', 'dequantize_convrot_w4a4_weight', 'dequantize_int8_convrot_weight', 'dequantize_int8_convrot_weight_dtype', 'dequantize_int8_embedding', 'dequantize_int8_simple', 'dequantize_int8_simple_dtype', 'dequantize_mxfp8', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'dequantize_w4a8_int8_weight', 'fp16_conv3d', 'fp16_conv3d_out', 'fp16_linear', 'gemv_awq_w4a16', 'group_norm_silu_pad3d', 'group_norm_silu_pad3d_out', 'group_norm_stats3d', 'int8_linear', 'int8_linear_modulated', 'int8_linear_rms_modulated', 'na3d', 'prepare_int4_weight_for_int8_linear', 'quantize_and_rotate_rowwise', 'quantize_convrot_w4a4_weight', 'quantize_int8_convrot_weight', 'quantize_int8_rowwise', 'quantize_int8_tensorwise', 'quantize_mxfp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'quantize_svdquant_w4a4', 'quantize_w4a8_int8_weight', 'rms_adaln', 'rms_gated_residual', 'rms_rope', 'rms_rope1', 'rms_rope1_', 'rms_rope_', 'rms_rope_split_half', 'rms_rope_split_half1', 'rms_rope_split_half1_', 'rms_rope_split_half_', 'rotate_int8_convrot_weight', 'scaled_mm_mxfp8', 'scaled_mm_nvfp4', 'scaled_mm_svdquant_w4a4', 'sol_attn', 'stochastic_rounding_fp8', 'w4a8_int8_linear', 'w4a8_packed_linear']}
+[32m[INFO][0m Found comfy_kitchen backend cuda: {'available': False, 'disabled': True, 'unavailable_reason': 'CUDA not available on this system', 'capabilities': []}
+[32m[INFO][0m Found comfy_kitchen backend ascend: {'available': False, 'disabled': False, 'unavailable_reason': "torch-npu is not installed: No module named 'torch_npu'", 'capabilities': []}
+[32m[INFO][0m Checkpoint files will always be loaded safely.
+[32m[INFO][0m Using torchvulkan 0.2.0+budgetfix on AMD Radeon RX 7800 XT (RADV NAVI32)
+[32m[INFO][0m Total VRAM 16368 MB, total RAM 64199 MB
+[32m[INFO][0m pytorch version: 2.13.0+cpu
+[32m[INFO][0m Set vram state to: NORMAL_VRAM
+[32m[INFO][0m Device: vulkan:0 AMD Radeon RX 7800 XT (RADV NAVI32)
+[32m[INFO][0m Using sub quadratic optimization for attention, if you have memory or speed issues try using: --use-split-cross-attention
+[32m[INFO][0m Python version: 3.14.8 (main, Oct  2 2026, 10:23:31) [GCC 16.2.1 20260810]
+[32m[INFO][0m ComfyUI version: 0.42.0
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[1m[33m[WARNING][0m Dynamic vram disabled with argument. If you have any issues with dynamic vram enabled please give us a detailed reports as this argument will be removed soon. If you use gguf we recommend keeping dynamic vram enabled and using native ComfyUI model formats instead. ComfyUI native formats like fp8, int8 and w4a8 will be faster even if they are larger than your memory.
+[32m[INFO][0m Setting temp directory to: /tmp/temp
+[1m[33m[WARNING][0m ****** User settings have been changed to be stored on the server instead of browser storage. ******
+[1m[33m[WARNING][0m ****** For multi-user setups add the --multi-user CLI argument to enable multiple user profiles. ******
+[32m[INFO][0m comfyui-frontend-package version: 1.57.1
+[32m[INFO][0m comfyui-workflow-templates version: 0.11.96
+[32m[INFO][0m comfyui-embedded-docs version: 0.5.14
+[32m[INFO][0m comfy-aimdo version: 0.6.0
+[32m[INFO][0m comfy-kitchen version: 0.2.40
+[32m[INFO][0m [Prompt Server] web root: /venv/lib/python3.14/site-packages/comfyui_frontend_package/static
+[32m[INFO][0m Asset seeder disabled
+[32m[INFO][0m No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[32m[INFO][0m 
+Import times for custom nodes:
+[32m[INFO][0m    0.0 seconds: /ComfyUI/custom_nodes/websocket_image_save.py
+[32m[INFO][0m    0.1 seconds: /ComfyUI/custom_nodes/gguf
+[32m[INFO][0m 
+[32m[INFO][0m Using RAM pressure cache.
+[32m[INFO][0m Starting server
+
+[32m[INFO][0m To see the GUI go to: http://127.0.0.1:8188
+[32m[INFO][0m got prompt
+[32m[INFO][0m Model storage policy: fast_disk=False paths=['/models/ae.safetensors']
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m Using split attention in VAE
+[32m[INFO][0m VAE load device: vulkan:0, offload device: cpu, dtype: torch.float32
+/ComfyUI/custom_nodes/gguf/pig.py:381: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  torch_tensor = torch.from_numpy(tensor.data)
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m CLIP/text encoder model load device: vulkan:0, offload device: cpu, current: cpu, dtype: torch.float16
+[32m[INFO][0m Requested to load ZImageTEModel_
+[32m[INFO][0m loaded completely; 9948.12 MB usable, 5166.06 MB loaded, full load: True
+/ComfyUI/comfy/text_encoders/llama.py:842: UserWarning: torchvulkan [NOT IMPLEMENTED]: Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode. (Triggered internally at /w/torchvulkan/src/api/registration.cpp:10.)
+  x = torch.add(residual, x, out=output)
+[32m[INFO][0m model weight dtype torch.float16, manual cast: None
+[32m[INFO][0m model_type FLOW
+[32m[INFO][0m Model storage policy: fast_disk=False paths=[]
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 3595.91 MB usable, 3565.15 MB loaded, 2154.85 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+gguf qtypes: F32 (145), Q8_0 (253)
+gguf qtypes: F32 (245), BF16 (28), Q6_K (180)
+Attempting to release mmap (267)
+  0%|          | 0/8 [00:00<?, ?it/s] 12%|█▎        | 1/8 [00:10<01:11, 10.26s/it] 25%|██▌       | 2/8 [00:20<01:00, 10.01s/it] 38%|███▊      | 3/8 [00:29<00:49,  9.87s/it] 50%|█████     | 4/8 [00:39<00:39,  9.81s/it] 62%|██████▎   | 5/8 [00:49<00:29,  9.79s/it] 75%|███████▌  | 6/8 [00:58<00:19,  9.77s/it] 88%|████████▊ | 7/8 [01:08<00:09,  9.75s/it]100%|██████████| 8/8 [01:18<00:00,  9.75s/it]100%|██████████| 8/8 [01:18<00:00,  9.81s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 66.88 MB freed, 3498.27 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2904.70 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 125.52 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.05 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:11<01:20, 11.48s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:06, 11.11s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:33<00:55, 11.13s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:44<00:44, 11.03s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:55<00:32, 10.96s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:05<00:21, 10.87s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:17<00:10, 10.96s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:27<00:00, 10.91s/it]100%|██████████| 8/8 [01:27<00:00, 10.98s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.44 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 104.74 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:11<01:23, 11.94s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:23<01:11, 11.90s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:35<00:59, 11.89s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:46<00:46, 11.59s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:57<00:33, 11.25s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:08<00:22, 11.13s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:19<00:11, 11.12s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:30<00:00, 10.97s/it]100%|██████████| 8/8 [01:30<00:00, 11.26s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 108.98 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:10<01:16, 10.93s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:06, 11.11s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:33<00:57, 11.43s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:45<00:46, 11.57s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:56<00:34, 11.43s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:07<00:22, 11.14s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:18<00:11, 11.18s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:30<00:00, 11.28s/it]100%|██████████| 8/8 [01:30<00:00, 11.28s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 109.16 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:11<01:23, 11.86s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:23<01:08, 11.45s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:34<00:56, 11.29s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:45<00:44, 11.14s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:55<00:33, 11.07s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:06<00:22, 11.03s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:17<00:10, 10.99s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:29<00:00, 11.07s/it]100%|██████████| 8/8 [01:29<00:00, 11.14s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 108.67 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:11<01:20, 11.53s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:23<01:11, 11.93s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:33<00:54, 10.99s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:44<00:44, 11.05s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:55<00:33, 11.09s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:07<00:22, 11.11s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:18<00:11, 11.11s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:29<00:00, 11.04s/it]100%|██████████| 8/8 [01:29<00:00, 11.14s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 108.18 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:11<01:18, 11.26s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:08, 11.47s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:34<00:56, 11.38s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:44<00:44, 11.16s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:56<00:33, 11.21s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:08<00:23, 11.72s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:20<00:11, 11.71s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:31<00:00, 11.55s/it]100%|██████████| 8/8 [01:31<00:00, 11.48s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 110.88 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:10<01:16, 10.91s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:06, 11.03s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:32<00:53, 10.79s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:43<00:42, 10.74s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:55<00:33, 11.22s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:06<00:22, 11.19s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:16<00:10, 10.92s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:27<00:00, 10.93s/it]100%|██████████| 8/8 [01:27<00:00, 10.97s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 107.46 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:10<01:16, 10.97s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:08, 11.40s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:39<01:10, 14.08s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:52<00:53, 13.44s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [01:04<00:38, 12.78s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:14<00:24, 12.05s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:25<00:11, 11.68s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:37<00:00, 11.63s/it]100%|██████████| 8/8 [01:37<00:00, 12.14s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 117.32 seconds[0m
+[32m[INFO][0m got prompt
+[32m[INFO][0m Requested to load Lumina2
+[32m[INFO][0m loaded partially; 4363.70 MB usable, 4332.94 MB loaded, 1387.06 MB offloaded, 30.76 MB buffer reserved, lowvram patches: 0
+  0%|          | 0/8 [00:00<?, ?it/s][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 12%|█▎        | 1/8 [00:10<01:16, 10.98s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 25%|██▌       | 2/8 [00:22<01:06, 11.16s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 38%|███▊      | 3/8 [00:33<00:56, 11.29s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 50%|█████     | 4/8 [00:44<00:43, 10.93s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 62%|██████▎   | 5/8 [00:54<00:32, 10.87s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 75%|███████▌  | 6/8 [01:05<00:21, 10.87s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+ 88%|████████▊ | 7/8 [01:17<00:11, 11.02s/it][1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+[1m[33m[WARNING][0m ran out of memory while running softmax in  _get_attention_scores_no_kv_chunking, trying slower in place softmax instead
+100%|██████████| 8/8 [01:27<00:00, 10.93s/it]100%|██████████| 8/8 [01:27<00:00, 10.98s/it]
+[32m[INFO][0m Requested to load AutoencodingEngine
+[32m[INFO][0m Unloaded partially: 865.43 MB freed, 3467.50 MB remains loaded, 30.76 MB buffer reserved, lowvram patches: 0
+[32m[INFO][0m 1 models unloaded.
+[32m[INFO][0m loaded completely; 2930.10 MB usable, 319.75 MB loaded, full load: True
+[32m[INFO][0m [32mPrompt executed in 107.40 seconds[0m
+[32m[INFO][0m 
+Stopped server
