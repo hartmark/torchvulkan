@@ -932,6 +932,17 @@ at::Tensor& rrelu_with_noise_out_vulkan(
     return fill_out(out, rrelu_with_noise_vulkan(self, noise, lower, upper, training, generator));
 }
 
+at::Tensor& rrelu_with_noise_vulkan_(
+    at::Tensor& self,
+    at::Tensor& noise,
+    const at::Scalar& lower,
+    const at::Scalar& upper,
+    bool training,
+    c10::optional<at::Generator> generator)
+{
+    return copy_inplace_result(self, rrelu_with_noise_vulkan(self, noise, lower, upper, training, generator));
+}
+
 at::Tensor efficientzerotensor_vulkan(
     c10::SymIntArrayRef size,
     c10::optional<at::ScalarType> dtype,
@@ -985,5 +996,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_segment_reduce_backward", &segment_reduce_backward_vulkan);
     m.impl("rrelu_with_noise", &rrelu_with_noise_vulkan);
     m.impl("rrelu_with_noise.out", &rrelu_with_noise_out_vulkan);
+    m.impl("rrelu_with_noise_", &rrelu_with_noise_vulkan_);
     m.impl("_efficientzerotensor", &efficientzerotensor_vulkan);
 }

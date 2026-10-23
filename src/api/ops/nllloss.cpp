@@ -155,9 +155,39 @@ at::Tensor nll_loss_backward_vulkan(
     return unbatched ? grad_input.squeeze(0) : grad_input;
 }
 
+std::tuple<at::Tensor&, at::Tensor&> nll_loss_forward_out_vulkan(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    at::Tensor& output,
+    at::Tensor& total_weight)
+{
+    auto [out, tw] = nll_loss_forward_vulkan(self, target, weight, reduction, ignore_index);
+    fill_out(output, out);
+    fill_out(total_weight, tw);
+    return {output, total_weight};
+}
+
+at::Tensor& nll_loss_backward_out_vulkan(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    const at::Tensor& total_weight,
+    at::Tensor& grad_input)
+{
+    return fill_out(grad_input, nll_loss_backward_vulkan(grad_output, self, target, weight, reduction, ignore_index, total_weight));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("nll_loss_forward", &nll_loss_forward_vulkan);
     m.impl("nll_loss_backward", &nll_loss_backward_vulkan);
+    m.impl("nll_loss_forward.output", &nll_loss_forward_out_vulkan);
+    m.impl("nll_loss_backward.grad_input", &nll_loss_backward_out_vulkan);
 }

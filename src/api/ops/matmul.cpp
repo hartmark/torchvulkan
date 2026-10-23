@@ -529,6 +529,26 @@ at::Tensor addmm_activation_vulkan(
     );
 }
 
+at::Tensor& bmm_out_vulkan(const at::Tensor& self, const at::Tensor& other, at::Tensor& out)
+{
+    return fill_out(out, bmm_vulkan(self, other));
+}
+
+at::Tensor& addmm_out_vulkan(const at::Tensor& input, const at::Tensor& mat1, const at::Tensor& mat2, const at::Scalar& beta, const at::Scalar& alpha, at::Tensor& out)
+{
+    return fill_out(out, addmm_vulkan(input, mat1, mat2, beta, alpha));
+}
+
+at::Tensor& baddbmm_out_vulkan(const at::Tensor& input, const at::Tensor& mat1, const at::Tensor& mat2, const at::Scalar& beta, const at::Scalar& alpha, at::Tensor& out)
+{
+    return fill_out(out, baddbmm_vulkan(input, mat1, mat2, beta, alpha));
+}
+
+at::Tensor& addmm_activation_out_vulkan(const at::Tensor& input, const at::Tensor& mat1, const at::Tensor& mat2, const at::Scalar& beta, const at::Scalar& alpha, bool use_gelu, at::Tensor& out)
+{
+    return fill_out(out, addmm_activation_vulkan(input, mat1, mat2, beta, alpha, use_gelu));
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -537,4 +557,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("addmm", &addmm_vulkan);
     m.impl("baddbmm", &baddbmm_vulkan);
     m.impl("_addmm_activation", &addmm_activation_vulkan);
+    m.impl("bmm.out", &bmm_out_vulkan);
+    m.impl("addmm.out", &addmm_out_vulkan);
+    m.impl("baddbmm.out", &baddbmm_out_vulkan);
+    m.impl("_addmm_activation.out", &addmm_activation_out_vulkan);
 }
