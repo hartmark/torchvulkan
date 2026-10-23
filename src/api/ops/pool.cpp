@@ -440,6 +440,21 @@ at::Tensor adaptive_avg_pool3d_backward_vulkan(const at::Tensor& grad_output, co
     return adaptive_avg_pool_backward(grad_output, self, 3);
 }
 
+at::Tensor& adaptive_avg_pool2d_out_vulkan(const at::Tensor& self, c10::SymIntArrayRef output_size, at::Tensor& out)
+{
+    return fill_out(out, adaptive_avg_pool2d_vulkan(self, output_size));
+}
+
+at::Tensor& adaptive_avg_pool3d_out_vulkan(const at::Tensor& self, c10::SymIntArrayRef output_size, at::Tensor& out)
+{
+    return fill_out(out, adaptive_avg_pool3d_vulkan(self, output_size));
+}
+
+at::Tensor& adaptive_avg_pool3d_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, adaptive_avg_pool3d_backward_vulkan(grad_output, self));
+}
+
 std::tuple<at::Tensor&, at::Tensor&> adaptive_max_pool2d_out_vulkan(const at::Tensor& self, at::IntArrayRef output_size, at::Tensor& out, at::Tensor& indices)
 {
     PoolGeometry g = adaptive_geometry(self, 2, output_size, "adaptive_max_pool2d");
@@ -624,6 +639,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("_adaptive_avg_pool3d", &adaptive_avg_pool3d_vulkan);
     m.impl("_adaptive_avg_pool2d_backward", &adaptive_avg_pool2d_backward_vulkan);
     m.impl("_adaptive_avg_pool3d_backward", &adaptive_avg_pool3d_backward_vulkan);
+    m.impl("adaptive_avg_pool2d.out", &adaptive_avg_pool2d_out_vulkan);
+    m.impl("adaptive_avg_pool3d.out", &adaptive_avg_pool3d_out_vulkan);
+    m.impl("adaptive_avg_pool3d_backward.grad_input", &adaptive_avg_pool3d_backward_out_vulkan);
     m.impl("adaptive_max_pool2d.out", &adaptive_max_pool2d_out_vulkan);
     m.impl("adaptive_max_pool3d.out", &adaptive_max_pool3d_out_vulkan);
     m.impl("adaptive_max_pool2d_backward.grad_input", &adaptive_max_pool2d_backward_out_vulkan);

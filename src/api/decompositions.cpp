@@ -973,6 +973,356 @@ at::Tensor& mm_dtype_out_vulkan(const at::Tensor& self, const at::Tensor& mat2, 
     return fill_out(out, mm_dtype_vulkan(self, mat2, out_dtype));
 }
 
+at::Tensor& log_softmax_out_vulkan(const at::Tensor& self, int64_t dim, bool half_to_float, at::Tensor& out)
+{
+    return fill_out(out, log_softmax_vulkan(self, dim, half_to_float));
+}
+
+at::Tensor& softmax_out_vulkan(const at::Tensor& self, int64_t dim, bool half_to_float, at::Tensor& out)
+{
+    return fill_out(out, softmax_vulkan(self, dim, half_to_float));
+}
+
+at::Tensor& log_softmax_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& output, int64_t dim, at::ScalarType input_dtype, at::Tensor& out)
+{
+    return fill_out(out, log_softmax_backward_vulkan(grad_output, output, dim, input_dtype));
+}
+
+at::Tensor& softmax_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& output, int64_t dim, at::ScalarType input_dtype, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, softmax_backward_vulkan(grad_output, output, dim, input_dtype));
+}
+
+at::Tensor& binary_cross_entropy_out_vulkan(const at::Tensor& self, const at::Tensor& target, const c10::optional<at::Tensor>& weight, int64_t reduction, at::Tensor& out)
+{
+    return fill_out(out, binary_cross_entropy_vulkan(self, target, weight, reduction));
+}
+
+at::Tensor& huber_loss_out_vulkan(const at::Tensor& self, const at::Tensor& target, int64_t reduction, double delta, at::Tensor& out)
+{
+    return fill_out(out, huber_loss_vulkan(self, target, reduction, delta));
+}
+
+at::Tensor& elu_out_vulkan(const at::Tensor& self, const at::Scalar& alpha, const at::Scalar& scale, const at::Scalar& input_scale, at::Tensor& out)
+{
+    return fill_out(out, elu_vulkan(self, alpha, scale, input_scale));
+}
+
+at::Tensor& eye_out_vulkan(c10::SymInt n, at::Tensor& out)
+{
+    return eye_m_out_vulkan(n, n, out);
+}
+
+at::Tensor& gelu_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, c10::string_view approximate, at::Tensor& grad_input)
+{
+    return fill_out(grad_input, gelu_backward_vulkan(grad_output, self, approximate));
+}
+
+at::Tensor& hardsigmoid_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, hardsigmoid_vulkan(self));
+}
+
+at::Tensor& hardswish_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, hardswish_vulkan(self));
+}
+
+at::Tensor& hardswish_vulkan_(at::Tensor& self)
+{
+    return copy_inplace_result(self, hardswish_vulkan(self));
+}
+
+at::Tensor& hardtanh_out_vulkan(const at::Tensor& self, const at::Scalar& min_val, const at::Scalar& max_val, at::Tensor& out)
+{
+    return fill_out(out, hardtanh_vulkan(self, min_val, max_val));
+}
+
+at::Tensor& hardtanh_vulkan_(at::Tensor& self, const at::Scalar& min_val, const at::Scalar& max_val)
+{
+    return copy_inplace_result(self, hardtanh_vulkan(self, min_val, max_val));
+}
+
+at::Tensor& leaky_relu_out_vulkan(const at::Tensor& self, const at::Scalar& negative_slope, at::Tensor& out)
+{
+    return fill_out(out, leaky_relu_vulkan(self, negative_slope));
+}
+
+std::tuple<at::Tensor&, at::Tensor&> log_sigmoid_forward_out_vulkan(const at::Tensor& self, at::Tensor& output, at::Tensor& buffer)
+{
+    auto [out, buf] = log_sigmoid_forward_vulkan(self);
+    fill_out(output, out);
+    buffer.resize_(buf.sizes());
+    return {output, buffer};
+}
+
+at::Tensor& logit_out_vulkan(const at::Tensor& self, c10::optional<double> eps, at::Tensor& out)
+{
+    return fill_out(out, logit_vulkan(self, eps));
+}
+
+at::Tensor& logit_vulkan_(at::Tensor& self, c10::optional<double> eps)
+{
+    return copy_inplace_result(self, logit_vulkan(self, eps));
+}
+
+at::Tensor& mish_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, mish_vulkan(self));
+}
+
+at::Tensor& silu_out_vulkan(const at::Tensor& self, at::Tensor& out)
+{
+    return fill_out(out, silu_vulkan(self));
+}
+
+at::Tensor& softplus_out_vulkan(const at::Tensor& self, const at::Scalar& beta, const at::Scalar& threshold, at::Tensor& out)
+{
+    return fill_out(out, softplus_vulkan(self, beta, threshold));
+}
+
+at::Tensor& norm_dtype_out_vulkan(const at::Tensor& self, const c10::optional<at::Scalar>& p, at::IntArrayRef dim, bool keepdim, at::ScalarType dtype, at::Tensor& out)
+{
+    return norm_scalaropt_dim_out_vulkan(self.to(dtype), p, dim, keepdim, out);
+}
+
+at::Tensor& var_correction_out_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, const c10::optional<at::Scalar>& correction, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, var_correction_vulkan(self, dim, correction, keepdim));
+}
+
+at::Tensor& std_correction_out_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, const c10::optional<at::Scalar>& correction, bool keepdim, at::Tensor& out)
+{
+    return fill_out(out, std_correction_vulkan(self, dim, correction, keepdim));
+}
+
+at::Tensor& mvlgamma_out_vulkan(const at::Tensor& self, int64_t p, at::Tensor& out)
+{
+    return fill_out(out, at::mvlgamma(self, p));
+}
+
+at::Tensor& narrow_copy_out_vulkan(const at::Tensor& self, int64_t dim, int64_t start, int64_t length, at::Tensor& out)
+{
+    return fill_out(out, self.narrow(dim, start, length).clone(at::MemoryFormat::Contiguous));
+}
+
+at::Tensor& range_out_vulkan(const at::Scalar& start, const at::Scalar& end, const at::Scalar& step, at::Tensor& out)
+{
+    at::Tensor cpu = at::range(start, end, step, out.options().device(at::kCPU));
+    out.resize_(cpu.sizes());
+    out.copy_(cpu);
+    return out;
+}
+
+bool is_set_to_vulkan(const at::Tensor& self, const at::Tensor& src)
+{
+    return self.storage().unsafeGetStorageImpl() == src.storage().unsafeGetStorageImpl()
+        && self.storage_offset() == src.storage_offset()
+        && self.sizes() == src.sizes()
+        && self.strides() == src.strides();
+}
+
+void assert_async_vulkan(const at::Tensor& self)
+{
+    TORCH_CHECK(at::is_nonzero(self), "Expected Tensor with single nonzero value, but got zero");
+}
+
+void assert_async_msg_vulkan(const at::Tensor& self, c10::string_view assert_msg)
+{
+    TORCH_CHECK(at::is_nonzero(self), assert_msg != "" ? assert_msg : "Assertion is failed");
+}
+
+at::Tensor functional_assert_async_msg_vulkan(const at::Tensor& self, c10::string_view assert_msg, const at::Tensor& dep_token)
+{
+    assert_async_msg_vulkan(self, assert_msg);
+    return dep_token.clone();
+}
+
+at::Tensor make_dep_token_vulkan(
+    c10::optional<at::ScalarType> dtype,
+    c10::optional<at::Layout> layout,
+    c10::optional<at::Device> device,
+    c10::optional<bool> pin_memory,
+    c10::optional<at::MemoryFormat> memory_format)
+{
+    return at::empty({}, at::TensorOptions().dtype(dtype).layout(layout).device(device).pinned_memory(pin_memory), memory_format);
+}
+
+void amp_foreach_non_finite_check_and_unscale_vulkan_(at::TensorList self, at::Tensor& found_inf, const at::Tensor& inv_scale)
+{
+    TORCH_CHECK(inv_scale.numel() == 1, "inv_scale must be a 1-element tensor.");
+    TORCH_CHECK(found_inf.numel() == 1, "found_inf must be a 1-element tensor.");
+    TORCH_CHECK(inv_scale.scalar_type() == at::kFloat, "inv_scale must be a float tensor.");
+    TORCH_CHECK(found_inf.scalar_type() == at::kFloat, "found_inf must be a float tensor.");
+    for (const at::Tensor& t : self) {
+        if (t.numel() == 0) continue;
+        at::Tensor nonfinite = at::logical_not(at::all(at::isfinite(t))).to(at::kFloat);
+        found_inf.copy_(at::maximum(found_inf, nonfinite.reshape(found_inf.sizes())));
+        t.mul_(inv_scale);
+    }
+}
+
+at::Tensor& amp_update_scale_vulkan_(
+    at::Tensor& self,
+    at::Tensor& growth_tracker,
+    const at::Tensor& found_inf,
+    double scale_growth_factor,
+    double scale_backoff_factor,
+    int64_t growth_interval)
+{
+    TORCH_CHECK(growth_tracker.scalar_type() == at::kInt, "growth_tracker must be an int tensor.");
+    TORCH_CHECK(self.scalar_type() == at::kFloat, "current_scale must be a float tensor.");
+    TORCH_CHECK(found_inf.scalar_type() == at::kFloat, "found_inf must be a float tensor.");
+
+    at::Tensor found = at::gt(found_inf, 0);
+    at::Tensor successful = at::add(growth_tracker, 1);
+    at::Tensor grow = at::logical_and(at::logical_not(found), at::eq(successful, growth_interval));
+    at::Tensor grown = at::mul(self, scale_growth_factor);
+    at::Tensor scale = at::where(found, at::mul(self, scale_backoff_factor), at::where(at::logical_and(grow, at::isfinite(grown)), grown, self));
+    at::Tensor tracker = at::where(at::logical_or(found, grow), at::zeros_like(successful), successful);
+    self.copy_(scale);
+    growth_tracker.copy_(tracker);
+    return self;
+}
+
+at::Tensor glu_jvp_vulkan(const at::Tensor& glu, const at::Tensor& x, const at::Tensor& dx, int64_t dim)
+{
+    dim = at::maybe_wrap_dim(dim, x.dim());
+    const int64_t n = glu.size(dim);
+    at::Tensor sig_b = at::sigmoid(x.narrow(dim, n, n));
+    at::Tensor da = dx.narrow(dim, 0, n);
+    at::Tensor db = dx.narrow(dim, n, n);
+    return at::add(at::mul(sig_b, da), at::mul(at::mul(glu, at::rsub(sig_b, 1)), db));
+}
+
+at::Tensor glu_backward_jvp_vulkan(
+    const at::Tensor& grad_x,
+    const at::Tensor& grad_glu,
+    const at::Tensor& x,
+    const at::Tensor& dgrad_glu,
+    const at::Tensor& dx,
+    int64_t dim)
+{
+    dim = at::maybe_wrap_dim(dim, x.dim());
+    const int64_t n = grad_glu.size(dim);
+    at::Tensor a = x.narrow(dim, 0, n);
+    at::Tensor sig_b = at::sigmoid(x.narrow(dim, n, n));
+    at::Tensor da = dx.narrow(dim, 0, n);
+    at::Tensor db = dx.narrow(dim, n, n);
+    at::Tensor grad_x_a = grad_x.narrow(dim, 0, n);
+    at::Tensor glu = at::mul(a, sig_b);
+    at::Tensor db_neg_sig_b = at::sub(db, at::mul(db, sig_b));
+    at::Tensor dgrad_x_a = at::add(at::mul(dgrad_glu, sig_b), at::mul(grad_x_a, db_neg_sig_b));
+    at::Tensor dgrad_x_b = at::add(
+        at::mul(dgrad_x_a, at::sub(a, glu)),
+        at::mul(grad_x_a, at::sub(at::sub(da, at::mul(da, sig_b)), at::mul(glu, db_neg_sig_b))));
+    return at::cat({dgrad_x_a, dgrad_x_b}, dim);
+}
+
+at::Tensor& silu_backward_out_vulkan(const at::Tensor& grad_output, const at::Tensor& self, at::Tensor& grad_input)
+{
+    at::Tensor s = at::sigmoid(self);
+    return fill_out(grad_input, at::mul(grad_output, at::mul(s, at::add(at::mul(self, at::rsub(s, 1)), 1))));
+}
+
+at::Tensor compute_linear_combination_vulkan(const at::Tensor& input, const at::Tensor& coefficients)
+{
+    return at::tensordot(coefficients.to(input.device(), input.scalar_type()), input, {1}, {0});
+}
+
+at::Tensor& compute_linear_combination_out_vulkan(const at::Tensor& input, const at::Tensor& coefficients, at::Tensor& out)
+{
+    return out.add_(compute_linear_combination_vulkan(input, coefficients));
+}
+
+std::tuple<at::Tensor, at::Tensor> batch_norm_update_stats_vulkan(
+    const at::Tensor& input,
+    const c10::optional<at::Tensor>& running_mean,
+    const c10::optional<at::Tensor>& running_var,
+    double momentum)
+{
+    TORCH_CHECK(input.numel() != 0, "input tensor must have at least one element, but got input_sizes = ", input.sizes());
+    const bool has_mean = running_mean.has_value() && running_mean->defined();
+    const bool has_var = running_var.has_value() && running_var->defined();
+    at::ScalarType out_dtype = has_mean && running_mean->scalar_type() != input.scalar_type() ? running_mean->scalar_type() : input.scalar_type();
+
+    std::vector<int64_t> dims;
+    for (int64_t d = 0; d < input.dim(); ++d) if (d != 1) dims.push_back(d);
+    at::Tensor x = is_low_prec(input.scalar_type()) ? input.to(at::kFloat) : input;
+    auto [var, mean] = at::var_mean(x, dims, /*correction=*/0, /*keepdim=*/false);
+    const int64_t n = input.numel() / input.size(1);
+
+    if (has_mean) running_mean->copy_(at::add(at::mul(mean, momentum), at::mul(*running_mean, 1.0 - momentum)));
+    if (has_var) running_var->copy_(at::add(at::mul(at::mul(var, double(n) / double(n - 1)), momentum), at::mul(*running_var, 1.0 - momentum)));
+    return {mean.to(out_dtype), var.to(out_dtype)};
+}
+
+std::tuple<at::Tensor, at::Tensor> weight_norm_interface_vulkan(const at::Tensor& v, const at::Tensor& g, int64_t dim)
+{
+    at::ScalarType norm_dtype = is_low_prec(g.scalar_type()) ? at::kFloat : g.scalar_type();
+    at::Tensor norm = at::norm_except_dim(v.to(norm_dtype), 2, dim).reshape(g.sizes());
+    at::Tensor w = at::mul(v, at::div(g, norm).to(v.scalar_type())).contiguous();
+    return {w, norm};
+}
+
+std::tuple<at::Tensor, at::Tensor> weight_norm_interface_backward_vulkan(
+    const at::Tensor& grad_w,
+    const at::Tensor& saved_v,
+    const at::Tensor& saved_g,
+    const at::Tensor& saved_norms,
+    int64_t dim)
+{
+    return at::_weight_norm_differentiable_backward(grad_w.contiguous(), saved_v.contiguous(), saved_g.contiguous(), saved_norms.contiguous(), dim);
+}
+
+at::Tensor expand_softmax_mask(const at::Tensor& input, const at::Tensor& mask, c10::optional<int64_t> mask_type)
+{
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "Mask should be a boolean tensor");
+    int64_t type = (mask.dim() != 2 || input.dim() != 4) ? 2 : mask_type.value_or(-1);
+    TORCH_CHECK(type == 0 || type == 1 || type == 2, "Mask Type should be 0 (src_mask) or 1 (src_key_padding_mask), or 2 (default_mask)");
+    if (type == 2) {
+        TORCH_CHECK(input.sizes() == mask.sizes(), "For mask_type == 2 mask shape should match input shape");
+        return mask;
+    }
+    if (type == 1) {
+        TORCH_CHECK(input.size(0) == mask.size(0) && input.size(2) == mask.size(1), "For mask_type == 1 mask shape should be (B, L)");
+        return mask.view({input.size(0), 1, 1, input.size(2)}).expand(input.sizes());
+    }
+    TORCH_CHECK(input.size(2) == mask.size(0) && input.size(2) == mask.size(1), "For mask_type == 0 mask shape should be (L, L)");
+    return mask.view({1, 1, input.size(2), input.size(2)}).expand(input.sizes());
+}
+
+at::Tensor masked_softmax_vulkan(const at::Tensor& self, const at::Tensor& mask, c10::optional<int64_t> dim, c10::optional<int64_t> mask_type)
+{
+    at::Tensor m = expand_softmax_mask(self, mask, mask_type);
+    int64_t d = at::maybe_wrap_dim(dim.value_or(self.dim() - 1), self.dim());
+    at::Tensor filled = at::masked_fill(self, m, -std::numeric_limits<double>::infinity());
+    return at::_softmax(filled, d, false);
+}
+
+at::Tensor masked_softmax_backward_vulkan(const at::Tensor& grad_output, const at::Tensor& output, const at::Tensor& mask, c10::optional<int64_t> dim)
+{
+    TORCH_CHECK(grad_output.sizes() == mask.sizes(), "Mask shape should match grad shape");
+    TORCH_CHECK(mask.scalar_type() == at::kBool, "Mask should be a boolean tensor");
+    int64_t d = at::maybe_wrap_dim(dim.value_or(output.dim() - 1), output.dim());
+    at::Tensor zero = at::zeros({}, grad_output.options());
+    at::Tensor go = at::where(mask, zero, at::mul(grad_output, output));
+    at::Tensor sum = at::sum(go, {d}, /*keepdim=*/true);
+    return at::where(mask, zero, at::mul(output, at::sub(grad_output, sum)));
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> transform_bias_rescale_qkv_vulkan(const at::Tensor& qkv, const at::Tensor& qkv_bias, int64_t num_head)
+{
+    TORCH_CHECK(!qkv.is_nested(), "torchvulkan [ERROR]: nested tensors are not supported.");
+    const int64_t B = qkv.size(0), T = qkv.size(1), D = qkv.size(2) / 3;
+    TORCH_CHECK(D % num_head == 0);
+    TORCH_CHECK(qkv.size(2) % 3 == 0);
+    const int64_t dim_per_head = D / num_head;
+    at::Tensor q_k_v = at::add(qkv, qkv_bias).view({B, T, 3, num_head, dim_per_head}).permute({2, 0, 3, 1, 4}).contiguous();
+    at::Tensor q = at::div(q_k_v[0], std::sqrt(double(dim_per_head)));
+    return {q, q_k_v[1], q_k_v[2]};
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -1062,4 +1412,49 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("mm.out", &mm_out_vulkan);
     m.impl("mm.dtype", &mm_dtype_vulkan);
     m.impl("mm.dtype_out", &mm_dtype_out_vulkan);
+    m.impl("_log_softmax.out", &log_softmax_out_vulkan);
+    m.impl("_softmax.out", &softmax_out_vulkan);
+    m.impl("_log_softmax_backward_data.out", &log_softmax_backward_out_vulkan);
+    m.impl("_softmax_backward_data.out", &softmax_backward_out_vulkan);
+    m.impl("binary_cross_entropy.out", &binary_cross_entropy_out_vulkan);
+    m.impl("huber_loss.out", &huber_loss_out_vulkan);
+    m.impl("elu.out", &elu_out_vulkan);
+    m.impl("eye.out", &eye_out_vulkan);
+    m.impl("gelu_backward.grad_input", &gelu_backward_out_vulkan);
+    m.impl("hardsigmoid.out", &hardsigmoid_out_vulkan);
+    m.impl("hardswish.out", &hardswish_out_vulkan);
+    m.impl("hardswish_", &hardswish_vulkan_);
+    m.impl("hardtanh.out", &hardtanh_out_vulkan);
+    m.impl("hardtanh_", &hardtanh_vulkan_);
+    m.impl("leaky_relu.out", &leaky_relu_out_vulkan);
+    m.impl("log_sigmoid_forward.output", &log_sigmoid_forward_out_vulkan);
+    m.impl("logit.out", &logit_out_vulkan);
+    m.impl("logit_", &logit_vulkan_);
+    m.impl("mish.out", &mish_out_vulkan);
+    m.impl("silu.out", &silu_out_vulkan);
+    m.impl("softplus.out", &softplus_out_vulkan);
+    m.impl("norm.dtype_out", &norm_dtype_out_vulkan);
+    m.impl("var.correction_out", &var_correction_out_vulkan);
+    m.impl("std.correction_out", &std_correction_out_vulkan);
+    m.impl("mvlgamma.out", &mvlgamma_out_vulkan);
+    m.impl("narrow_copy.out", &narrow_copy_out_vulkan);
+    m.impl("range.out", &range_out_vulkan);
+    m.impl("is_set_to", &is_set_to_vulkan);
+    m.impl("_assert_async", &assert_async_vulkan);
+    m.impl("_assert_async.msg", &assert_async_msg_vulkan);
+    m.impl("_functional_assert_async.msg", &functional_assert_async_msg_vulkan);
+    m.impl("_make_dep_token", &make_dep_token_vulkan);
+    m.impl("_amp_foreach_non_finite_check_and_unscale_", &amp_foreach_non_finite_check_and_unscale_vulkan_);
+    m.impl("_amp_update_scale_", &amp_update_scale_vulkan_);
+    m.impl("glu_jvp", &glu_jvp_vulkan);
+    m.impl("glu_backward_jvp", &glu_backward_jvp_vulkan);
+    m.impl("silu_backward.grad_input", &silu_backward_out_vulkan);
+    m.impl("_compute_linear_combination", &compute_linear_combination_vulkan);
+    m.impl("_compute_linear_combination.out", &compute_linear_combination_out_vulkan);
+    m.impl("batch_norm_update_stats", &batch_norm_update_stats_vulkan);
+    m.impl("_weight_norm_interface", &weight_norm_interface_vulkan);
+    m.impl("_weight_norm_interface_backward", &weight_norm_interface_backward_vulkan);
+    m.impl("_masked_softmax", &masked_softmax_vulkan);
+    m.impl("_masked_softmax_backward", &masked_softmax_backward_vulkan);
+    m.impl("_transform_bias_rescale_qkv", &transform_bias_rescale_qkv_vulkan);
 }

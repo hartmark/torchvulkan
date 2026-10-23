@@ -540,6 +540,26 @@ at::Tensor& hash_tensor_out_vulkan(const at::Tensor& self, at::IntArrayRef dim, 
     return fill_out(out, hashed.view(at::kUInt64).reshape(out_shape));
 }
 
+at::Tensor& prod_dim_out_vulkan(const at::Tensor& self, int64_t dim, bool keepdim, c10::optional<at::ScalarType> dtype, at::Tensor& out)
+{
+    return fill_out(out, prod_dim_vulkan(self, dim, keepdim, dtype));
+}
+
+at::Tensor& mean_out_vulkan(const at::Tensor& self, at::OptionalIntArrayRef dim, bool keepdim, c10::optional<at::ScalarType> dtype, at::Tensor& out)
+{
+    return fill_out(out, mean_dim_vulkan(self, dim, keepdim, dtype));
+}
+
+std::tuple<at::Tensor, at::Tensor> aminmax_all_deprecated_vulkan(const at::Tensor& self)
+{
+    return at::aminmax(self);
+}
+
+std::tuple<at::Tensor, at::Tensor> aminmax_dim_deprecated_vulkan(const at::Tensor& self, int64_t dim, bool keepdim)
+{
+    return at::aminmax(self, dim, keepdim);
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -565,6 +585,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
     m.impl("max.unary_out", &max_unary_out_vulkan);
     m.impl("min.unary_out", &min_unary_out_vulkan);
     m.impl("aminmax.out", &aminmax_out_vulkan);
+    m.impl("prod.int_out", &prod_dim_out_vulkan);
+    m.impl("mean.out", &mean_out_vulkan);
+    m.impl("_aminmax", &aminmax_all_deprecated_vulkan);
+    m.impl("_aminmax.dim", &aminmax_dim_deprecated_vulkan);
     m.impl("equal", &equal_vulkan);
     m.impl("hash_tensor.out", &hash_tensor_out_vulkan);
     m.impl("amax.out", &amax_out_vulkan);
