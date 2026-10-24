@@ -111,7 +111,8 @@ private:
     std::unordered_set<uint64_t> pending_buffers;
     size_t pending_bytes = 0;
 
-    void submit();
+    enum class SubmitReason { OPS_LIMIT, BYTES_LIMIT, METADATA, FLUSH, RELEASE };
+    void submit(SubmitReason reason);
     uint64_t registerMetadata(const Metadata& metadata);
     void trackPending(const MemoryRange& range);
     void flushIfPending();

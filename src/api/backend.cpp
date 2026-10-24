@@ -74,6 +74,32 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         return {device->memoryFree(), device->memoryTotal()};
     });
 
+    m.def("_dispatch_stats", [](int64_t device_index) {
+        DeviceContext* d = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        DispatchStats& s = d->stats;
+        py::dict r;
+        r["submits"] = s.submits.load(); r["submit_ops_limit"] = s.submit_ops_limit.load();
+        r["submit_bytes_limit"] = s.submit_bytes_limit.load(); r["submit_metadata"] = s.submit_metadata.load();
+        r["submit_flush"] = s.submit_flush.load(); r["submit_release"] = s.submit_release.load();
+        r["ops"] = s.ops.load(); r["waves"] = s.waves.load();
+        r["record_s"] = s.record_ns.load() / 1e9; r["gpu_wait_s"] = s.wait_ns.load() / 1e9;
+        r["h2d_copies"] = s.h2d_copies.load(); r["h2d_bytes"] = s.h2d_bytes.load();
+        r["d2h_copies"] = s.d2h_copies.load(); r["d2h_bytes"] = s.d2h_bytes.load();
+        r["device_allocs"] = s.device_allocs.load(); r["device_alloc_bytes"] = s.device_alloc_bytes.load();
+        r["staging_allocs"] = s.staging_allocs.load(); r["staging_alloc_bytes"] = s.staging_alloc_bytes.load();
+        r["cache_hits"] = s.cache_hits.load(); r["cache_releases"] = s.cache_releases.load();
+        r["cache_released_bytes"] = s.cache_released_bytes.load();
+        uint64_t bmin = s.bytes_flush_budget_min.load();
+        r["bytes_flush_budget_min"] = bmin == UINT64_MAX ? 0 : bmin; r["bytes_flush_budget_max"] = s.bytes_flush_budget_max.load();
+        r["budget_now"] = d->memoryBudget(); r["usage_now"] = d->memoryUsage();
+        r["pooled_device_bytes"] = d->cache.pooledBytes(true); r["pooled_staging_bytes"] = d->cache.pooledBytes(false);
+        return r;
+    });
+
+    m.def("_reset_dispatch_stats", [](int64_t device_index) {
+        VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->stats.reset();
+    });
+
     m.def("_memory_allocated", [](int64_t device_index) -> uint64_t {
         return VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->allocated_bytes.load();
     });

@@ -38,6 +38,8 @@ void VulkanAllocator::copy_host_to_device(void* dest, uint64_t dest_offset, cons
     VulkanBuffer* dstBuffer = static_cast<VulkanBuffer*>(dest);
     DeviceContext* device = dstBuffer->owner();
 
+    device->stats.h2d_copies++;
+    device->stats.h2d_bytes += count;
     VulkanBuffer* stagingBuffer = allocateBuffer(device, count, MemoryUsage::HOST_TO_DEVICE);
     std::memcpy(stagingBuffer->data(), src, count);
     stagingBuffer->flush();
@@ -53,6 +55,8 @@ void VulkanAllocator::copy_device_to_host(void* dest, const void* src, uint64_t 
     VulkanBuffer* srcBuffer = static_cast<VulkanBuffer*>(const_cast<void*>(src));
     DeviceContext* device = srcBuffer->owner();
 
+    device->stats.d2h_copies++;
+    device->stats.d2h_bytes += count;
     VulkanBuffer* stagingBuffer = allocateBuffer(device, count, MemoryUsage::DEVICE_TO_HOST);
     device->shader_manager->dispatchCopy(srcBuffer, src_offset, stagingBuffer, /* dstOffset = */ 0, count);
 
@@ -92,12 +96,14 @@ VulkanBuffer* VulkanAllocator::unsafeCreateBuffer(DeviceContext* device, size_t 
     size_t rounded = VulkanCache::roundBufferSize(size);
     auto buffer = std::make_unique<VulkanBuffer>(device);
     if (buffer->createBuffer(rounded, usage) != VK_SUCCESS) return nullptr;
+    if (usage == MemoryUsage::DEVICE_ONLY) { device->stats.device_allocs++; device->stats.device_alloc_bytes += rounded; }
+    else { device->stats.staging_allocs++; device->stats.staging_alloc_bytes += rounded; }
     return buffer.release();
 }
 
 VulkanBuffer* VulkanAllocator::allocateBuffer(DeviceContext* device, size_t size, MemoryUsage usage)
 {
-    if (VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage)) return buffer;
+    if (VulkanBuffer* buffer = device->cache.allocateBuffer(size, usage)) { device->stats.cache_hits++; return buffer; }
     if (VulkanBuffer* buffer = createBuffer(device, size, usage)) return buffer;
 
     device->shader_manager->flushAndReleaseBuffers();
