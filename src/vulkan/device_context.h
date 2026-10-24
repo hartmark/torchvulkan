@@ -10,6 +10,24 @@
 
 class VulkanShaderManager;
 
+// Debug counters (torchvulkan.dispatch_stats()); relaxed atomics, cheap enough to leave on.
+struct DispatchStats {
+    std::atomic<uint64_t> submits{0}, submit_ops_limit{0}, submit_bytes_limit{0}, submit_metadata{0},
+        submit_flush{0}, submit_release{0};
+    std::atomic<uint64_t> ops{0}, waves{0}, record_ns{0}, wait_ns{0};
+    std::atomic<uint64_t> h2d_copies{0}, h2d_bytes{0}, d2h_copies{0}, d2h_bytes{0};
+    std::atomic<uint64_t> device_allocs{0}, device_alloc_bytes{0}, staging_allocs{0}, staging_alloc_bytes{0};
+    std::atomic<uint64_t> cache_hits{0}, cache_releases{0}, cache_released_bytes{0};
+    std::atomic<uint64_t> bytes_flush_budget_min{UINT64_MAX}, bytes_flush_budget_max{0};
+    void reset() {
+        for (auto* a : {&submits, &submit_ops_limit, &submit_bytes_limit, &submit_metadata, &submit_flush, &submit_release,
+                        &ops, &waves, &record_ns, &wait_ns, &h2d_copies, &h2d_bytes, &d2h_copies, &d2h_bytes,
+                        &device_allocs, &device_alloc_bytes, &staging_allocs, &staging_alloc_bytes,
+                        &cache_hits, &cache_releases, &cache_released_bytes, &bytes_flush_budget_max}) a->store(0);
+        bytes_flush_budget_min.store(UINT64_MAX);
+    }
+};
+
 struct DeviceContext {
     c10::DeviceIndex index = -1;
     VkDevice device = VK_NULL_HANDLE;
@@ -47,6 +65,7 @@ struct DeviceContext {
 
     std::atomic<size_t> allocated_bytes{0};
     std::atomic<size_t> peak_allocated_bytes{0};
+    DispatchStats stats;
 
     DeviceContext() { cache.setOwner(this); }
     DeviceContext(const DeviceContext&) = delete;

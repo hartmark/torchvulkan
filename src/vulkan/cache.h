@@ -49,6 +49,7 @@ public:
     VulkanBuffer* allocateBuffer(size_t size, MemoryUsage usage);
     void deleteBuffer(VulkanBuffer* buffer);
     void releaseBuffers();
+    size_t pooledBytes(bool device_pool);
 
     void clear();
 

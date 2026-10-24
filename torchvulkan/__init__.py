@@ -61,6 +61,13 @@ def memory_reserved(device=None) -> int:
 def reset_peak_memory_stats(device=None) -> None:
     _C._reset_peak_memory_stats(_device_index(device))
 
+def dispatch_stats(device=None) -> dict:
+    """Debug counters: submits by reason, GPU wait time, transfers, allocations, buffer cache."""
+    return dict(_C._dispatch_stats(_device_index(device)))
+
+def reset_dispatch_stats(device=None) -> None:
+    _C._reset_dispatch_stats(_device_index(device))
+
 def memory_stats(device=None) -> dict:
     index = _device_index(device)
     allocated = _C._memory_allocated(index)

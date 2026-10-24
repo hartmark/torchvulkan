@@ -2,6 +2,7 @@
 #include "device_context.h"
 #include "shader.h"
 #include <algorithm>
+#include <chrono>
 #include <unordered_map>
 
 void DAGDispatcher::recordOp(VkCommandBuffer cmd, const OpInfo* op)
@@ -64,6 +65,8 @@ void DAGDispatcher::recordHostBarrier(VkCommandBuffer cmd)
 
 void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operations)
 {
+    auto t_record = std::chrono::steady_clock::now();
+    device->stats.ops += operations.size();
     // all elements in the vector depend on the key
     std::unordered_map<const OpInfo*, std::vector<const OpInfo*>> dependents;
     std::unordered_map<const OpInfo*, int> unresolved_deps;
@@ -141,6 +144,7 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
             }
         }
 
+        device->stats.waves++;
         if (!next_wave.empty()) recordBarrier(cmd);
         ready = std::move(next_wave);
     }
@@ -153,6 +157,8 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
+    auto t_submit = std::chrono::steady_clock::now();
+    device->stats.record_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_submit - t_record).count();
     VkFence fence = device->cache.allocateFence();
     VkResult submit_result = device->device_table.vkQueueSubmit(device->computeQueue, 1, &submitInfo, fence);
     if (submit_result != VK_SUCCESS) {
@@ -163,6 +169,7 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
 
     VkResult wait_result = device->device_table.vkWaitForFences(device->device, 1, &fence, VK_TRUE, UINT64_MAX);
     TORCH_CHECK(wait_result == VK_SUCCESS, "torchvulkan [ERROR]: Wait for fence failed with VkResult ", wait_result, ".");
+    device->stats.wait_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t_submit).count();
 
     device->cache.deleteCommandBuffer(cmd);
     device->cache.deleteFence(fence);

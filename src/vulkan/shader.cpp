@@ -64,7 +64,7 @@ uint64_t VulkanShaderManager::registerMetadata(const Metadata& metadata)
 {
     // assume active mutex
     metadata_offset = (metadata_offset + 7) & ~uint64_t(7);
-    if (metadata_offset + metadata.size > METADATA_BUFFER_SIZE) submit();
+    if (metadata_offset + metadata.size > METADATA_BUFFER_SIZE) submit(SubmitReason::METADATA);
 
     uint64_t block_offset = metadata_offset;
     uint8_t* block = static_cast<uint8_t*>(metadata_buffer->data()) + block_offset;
@@ -85,22 +85,40 @@ uint64_t VulkanShaderManager::registerMetadata(const Metadata& metadata)
 void VulkanShaderManager::flush()
 {
     std::lock_guard<std::mutex> lock(record_mutex_);
-    submit();
+    submit(SubmitReason::FLUSH);
 }
 
 void VulkanShaderManager::flushAndReleaseBuffers()
 {
     std::lock_guard<std::mutex> lock(record_mutex_);
-    submit();
+    submit(SubmitReason::RELEASE);
     device->cache.releaseBuffers();
 }
 
-void VulkanShaderManager::submit()
+void VulkanShaderManager::submit(SubmitReason reason)
 {
     // assume active mutex
     if (metadata_offset > 0) metadata_buffer->flush();
     metadata_offset = 0;
     if (operations.empty()) return;
+
+    DispatchStats& st = device->stats;
+    st.submits++;
+    switch (reason) {
+        case SubmitReason::OPS_LIMIT: st.submit_ops_limit++; break;
+        case SubmitReason::BYTES_LIMIT: {
+            st.submit_bytes_limit++;
+            uint64_t b = device->memoryBudget();
+            uint64_t cur = st.bytes_flush_budget_min.load();
+            while (b < cur && !st.bytes_flush_budget_min.compare_exchange_weak(cur, b)) {}
+            cur = st.bytes_flush_budget_max.load();
+            while (b > cur && !st.bytes_flush_budget_max.compare_exchange_weak(cur, b)) {}
+            break;
+        }
+        case SubmitReason::METADATA: st.submit_metadata++; break;
+        case SubmitReason::FLUSH: st.submit_flush++; break;
+        case SubmitReason::RELEASE: st.submit_release++; break;
+    }
 
     std::vector<std::unique_ptr<OpInfo>> batch = std::move(operations);
     std::vector<VulkanBuffer*> release = std::move(release_after_flush);
@@ -187,7 +205,8 @@ void VulkanShaderManager::flushIfPending()
 {
     // assume active mutex
     bool too_many_bytes = pending_bytes > MIN_PENDING_BYTES_FLUSH_THRESHOLD && pending_bytes > device->memoryBudget() / 4;
-    if (too_many_bytes || operations.size() >= MAX_PENDING_OPS) submit();
+    if (too_many_bytes) submit(SubmitReason::BYTES_LIMIT);
+    else if (operations.size() >= MAX_PENDING_OPS) submit(SubmitReason::OPS_LIMIT);
 }
 
 void VulkanShaderManager::dispatchCopy(

@@ -105,9 +105,22 @@ void VulkanCache::deleteBuffer(VulkanBuffer* buffer)
     poolFor(buffer->usage())[buffer->size()].push_back(buffer);
 }
 
+size_t VulkanCache::pooledBytes(bool device_pool)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t total = 0;
+    for (auto& [size, buffers] : (device_pool ? deviceBufferPool : stagingBufferPool)) total += size * buffers.size();
+    return total;
+}
+
 void VulkanCache::releaseBuffers()
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (owner_ != nullptr) {
+        owner_->stats.cache_releases++;
+        for (auto* pool : {&deviceBufferPool, &stagingBufferPool})
+            for (auto& [size, buffers] : *pool) owner_->stats.cache_released_bytes += size * buffers.size();
+    }
     for (auto* pool : {&deviceBufferPool, &stagingBufferPool}) {
         for (auto& [size, buffers] : *pool) {
             for (VulkanBuffer* buffer : buffers) delete buffer;
