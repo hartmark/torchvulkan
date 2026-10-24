@@ -31,6 +31,7 @@ size_t DeviceContext::memoryTotal()
 
 size_t DeviceContext::memoryFree()
 {
+    vmaSetCurrentFrameIndex(allocator, 0);
     size_t budget = memoryBudget();
     size_t used = memoryUsage();
     return budget > used ? budget - used : 0;
