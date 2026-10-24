@@ -1,0 +1,111 @@
+{
+ "backend": "vulkan",
+ "cmd": [
+  "main.py",
+  "--listen",
+  "127.0.0.1",
+  "--port",
+  "8188",
+  "--disable-auto-launch",
+  "--output-directory",
+  "/out",
+  "--temp-directory",
+  "/tmp",
+  "--vulkan",
+  "--disable-dynamic-vram",
+  "--disable-pinned-memory",
+  "--reserve-vram",
+  "2.5"
+ ],
+ "runs": 5,
+ "res": 1024,
+ "steps": 8,
+ "unet": "z_image_turbo-Q6_K.gguf",
+ "text_encoder": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+ "vae": "ae.safetensors",
+ "status": "ok",
+ "prompts": [
+  {
+   "i": 0,
+   "seed": 1000,
+   "start": 1792837663.6709733,
+   "end": 1792837756.8818192,
+   "seconds": 93.21,
+   "sampling_s": 42,
+   "s_per_it": 5.25
+  },
+  {
+   "i": 1,
+   "seed": 1001,
+   "start": 1792837756.8819368,
+   "end": 1792837818.5082674,
+   "seconds": 61.63,
+   "sampling_s": 46,
+   "s_per_it": 5.75
+  },
+  {
+   "i": 2,
+   "seed": 1002,
+   "start": 1792837818.5083773,
+   "end": 1792837898.162035,
+   "seconds": 79.65,
+   "sampling_s": 60,
+   "s_per_it": 7.5
+  },
+  {
+   "i": 3,
+   "seed": 1003,
+   "start": 1792837898.1621814,
+   "end": 1792837975.5175185,
+   "seconds": 77.36,
+   "sampling_s": 61,
+   "s_per_it": 7.62
+  },
+  {
+   "i": 4,
+   "seed": 1004,
+   "start": 1792837975.5176108,
+   "end": 1792838046.246302,
+   "seconds": 70.73,
+   "sampling_s": 55,
+   "s_per_it": 6.88
+  }
+ ],
+ "versions": [
+  "backend=vulkan",
+  "comfyui=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab",
+  "gguf_node=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105",
+  "python 3.14.8-1",
+  "vulkan-radeon 1:26.2.5-1",
+  "vulkan-icd-loader 1.4.363.0-1",
+  "comfy-aimdo                                0.6.0",
+  "comfy-angle                                0.1.1",
+  "comfy-kitchen                              0.2.40",
+  "comfyui-embedded-docs                      0.5.14",
+  "comfyui_frontend_package                   1.57.1",
+  "comfyui_workflow_templates                 0.11.96",
+  "comfyui-workflow-templates-core            0.3.387",
+  "comfyui-workflow-templates-json            0.1.122",
+  "comfyui-workflow-templates-media-api       0.3.84",
+  "comfyui-workflow-templates-media-assets-01 0.1.48",
+  "comfyui-workflow-templates-media-assets-02 0.1.23",
+  "comfyui-workflow-templates-media-image     0.3.160",
+  "comfyui-workflow-templates-media-other     0.3.229",
+  "comfyui-workflow-templates-media-video     0.3.101",
+  "torch                                      2.13.0+cpu",
+  "torchsde                                   0.2.6",
+  "torchvision                                0.28.0+cpu",
+  "torchvulkan                                0.2.0+budgetfix"
+ ],
+ "t_start": 1792837656.759919,
+ "device": "AMD Radeon RX 7800 XT (RADV NAVI32)",
+ "startup_s": 6.0,
+ "t_end": 1792838047.6622488,
+ "torchvulkan_fallbacks": [
+  "Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode. "
+ ],
+ "fallback_counts": {
+  "aten::add.out": 1
+ },
+ "warn_always": false
+}

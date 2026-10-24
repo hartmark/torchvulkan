@@ -65,7 +65,7 @@ for b in ('rocm', 'vulkan'):
     s['cpu_tree_max_pct'] = stats(win, 'cpu_tree_pct', max)
     s['cpu_host_avg_pct'] = stats(win, 'cpu_host_pct', statistics.mean)
     s['cpu_temp_max_c'] = stats(win, 'cpu_temp_c', max)
-    for k in ('gpu_edge_c', 'gpu_junction_c', 'gpu_mem_c', 'gpu_power_w', 'gpu_sclk_mhz'):
+    for k in ('gpu_edge_c', 'gpu_junction_c', 'gpu_mem_c', 'gpu_power_w', 'gpu_sclk_mhz', 'gpu_mclk_mhz', 'gpu_fclk_mhz'):
         s[k + '_avg'] = stats(win, k, statistics.mean)
         s[k + '_max'] = stats(win, k, max)
     s['gpu_edge_c_idle'] = first('gpu_edge_c')
@@ -102,7 +102,7 @@ lines = [f"# torchvulkan vs ROCm in ComfyUI — {host['gpu']}", '',
          row('GPU edge temp start / avg / max, °C', 'gpu_edge_c_idle', 'gpu_edge_c_avg', 'gpu_edge_c_max'),
          row('GPU junction temp avg / max, °C', 'gpu_junction_c_avg', 'gpu_junction_c_max'), row('GPU mem temp avg / max, °C', 'gpu_mem_c_avg', 'gpu_mem_c_max'),
          row('GPU power avg / max, W', 'gpu_power_w_avg', 'gpu_power_w_max'),
-         row('GPU sclk avg, MHz', 'gpu_sclk_mhz_avg'), row('CPU temp max, °C', 'cpu_temp_max_c'), '']
+         row('GPU sclk avg, MHz', 'gpu_sclk_mhz_avg'), row('GPU mclk / fclk avg, MHz', 'gpu_mclk_mhz_avg', 'gpu_fclk_mhz_avg'), row('CPU temp max, °C', 'cpu_temp_max_c'), '']
 for b in R:
     if backends[b].get('error'):
         lines.append(f"**{b} error:** `{backends[b]['error']}`")

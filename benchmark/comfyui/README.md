@@ -148,6 +148,32 @@ torchvulkan CPU fallback is logged instead of only the first):
   #33 and `main`; the cause of the slower night runs is not known yet. An interleaved A/B/C run was
   stopped after its first part, to be repeated.
 
+### Resizable BAR on the RX 7800 XT, 2026-10-24
+
+After enabling Above 4G decoding + Resizable BAR in the BIOS: BAR 0 = 16 GB (`BAR=16384M`, all VRAM
+CPU-visible, was 256 MB). Same builds and flags as `bernard-rx7800xt-budgetfix` (ROCm 7.1 and
+torchvulkan 0.2.0 + #33), 10 images, KDE desktop and Steam running:
+
+| | 256 MB BAR | Resizable BAR (16 GB) |
+|---|---|---|
+| ROCm warm image (median) | 21.0–22.1 s ¹ | **19.5 s** |
+| ROCm first image | 33.8–41.9 s | 34.4 s |
+| ROCm sampling | 2.25 s/it | 2.25 s/it |
+| Vulkan warm image (median) | 54.7 s (afternoon) / 96.6 s (night) | 91.2 s |
+| Vulkan sampling | 5.0 s/it (afternoon) / 9.5 s/it (night) | 9.6 s/it |
+| Vulkan + `--reserve-vram 2.5` (5 images) | – | 70.7–79.7 s (image 2: 61.6 s) |
+
+¹ `bernard-rx7800xt-reserve7` and `bernard-rx7800xt-noreserve-oom`.
+
+- ROCm got ~7 % faster per warm image; sampling itself did not change, so the gain is outside it.
+- Vulkan: the slowdown seen in the night runs is still there after the reboot, with identical
+  software (kernel 7.2.11, Mesa 26.2.5, same image, same torchvulkan build and flags), so this run
+  cannot show a Resizable BAR effect for Vulkan. In the slow runs the GPU draws less power (110–180 W
+  instead of ~220 W) at a higher shader clock while ~2.6 GB more GTT is in use during sampling; with
+  `--reserve-vram 2.5` the 2nd image was fast again (GTT 0.8 GB, 46 s sampling) but images 3–5 were
+  not. The cause is not known yet. `monitor.py` now also logs the memory and fabric clocks
+  (`gpu_mclk_mhz`, `gpu_fclk_mhz`) for the next runs.
+
 All four first images (same seed) are visually identical:
 ![first images](results/first-images-kozel-rocm-vulkan-bernard-rocm-vulkan.png)
 (RX 9060 XT ROCm, RX 9060 XT Vulkan, RX 7800 XT ROCm, RX 7800 XT Vulkan)

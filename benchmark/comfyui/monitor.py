@@ -59,6 +59,17 @@ if CPU_T is None:  # e.g. no k10temp module loaded: use a board sensor labelled 
         CPU_T = CPU_T or hwmon_by_label(h, 'temp', 'cpu')
 
 
+def dpm_current(name):
+    # current level of an amdgpu pp_dpm_* table, the line marked with '*', e.g. "3: 1218Mhz *"
+    try:
+        for line in open(f'{CARD}/{name}'):
+            if line.rstrip().endswith('*'):
+                return int(line.split(':')[1].strip().split('M')[0])
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
 def host_cpu():
     f = [int(x) for x in open('/proc/stat').readline().split()[1:]]
     idle = f[3] + f[4]
@@ -103,7 +114,7 @@ def meminfo():
 
 
 cols = ['t', 'gpu_busy_pct', 'vram_mb', 'gtt_mb', 'gpu_edge_c', 'gpu_junction_c', 'gpu_mem_c', 'gpu_power_w',
-        'gpu_sclk_mhz', 'gpu_fan_rpm', 'cpu_host_pct', 'cpu_tree_pct', 'cpu_temp_c', 'rss_tree_mb',
+        'gpu_sclk_mhz', 'gpu_mclk_mhz', 'gpu_fclk_mhz', 'gpu_fan_rpm', 'cpu_host_pct', 'cpu_tree_pct', 'cpu_temp_c', 'rss_tree_mb',
         'mem_avail_mb', 'swap_used_mb']
 w = csv.writer(open(out, 'w', newline=''))
 w.writerow(cols)
@@ -125,6 +136,7 @@ while os.path.exists(f'/proc/{root}'):
                 (rd(CARD + '/mem_info_gtt_used') or 0) >> 20, t(GPU_T['edge']), t(GPU_T['junction']),
                 t(GPU_T['mem']), None if pw is None else round(pw / 1e6, 1),
                 None if GPU_SCLK is None or rd(GPU_SCLK) is None else rd(GPU_SCLK) // 1000000,
+                dpm_current('pp_dpm_mclk'), dpm_current('pp_dpm_fclk'),
                 rd(HWMON + '/fan1_input') if HWMON else None,
                 round(100 * (dt_all - dt_idle) / dt_all, 1) if dt_all else None,
                 round(100 * (total_ticks - prev_tree) / HZ / (now - prev_t), 1),
