@@ -77,7 +77,10 @@ def _tvstats(path):
         time.sleep(1)
     with open(path, 'a') as f:
         while True:
-            f.write(json.dumps(dict(t=time.time(), **torchvulkan.dispatch_stats())) + chr(10))
+            row = dict(t=time.time(), **torchvulkan.dispatch_stats())
+            if hasattr(torchvulkan, 'gpu_profile'):
+                row['gpu_profile'] = torchvulkan.gpu_profile()
+            f.write(json.dumps(row) + chr(10))
             f.flush()
             time.sleep(2)
 threading.Thread(target=_tvstats, args=(%r,), daemon=True).start()

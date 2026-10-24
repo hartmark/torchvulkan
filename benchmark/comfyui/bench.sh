@@ -126,6 +126,8 @@ for b in "${BL[@]}"; do
   podman run -d --replace --name "tvbench-$b" "${dev[@]}" --group-add keep-groups \
     --security-opt seccomp=unconfined --security-opt label=disable --cap-add SYS_PTRACE \
     ${TVBENCH_VULKAN_FREE:+-e TVBENCH_VULKAN_FREE=$TVBENCH_VULKAN_FREE} \
+    ${TORCHVULKAN_GPU_PROFILE:+-e TORCHVULKAN_GPU_PROFILE=$TORCHVULKAN_GPU_PROFILE} \
+    ${TORCHVULKAN_STRICT:+-e TORCHVULKAN_STRICT=$TORCHVULKAN_STRICT} \
     -v "$MODELS:/models:ro" -v "$VENVS/$b:/venv:ro" -v "$OUT/$b:/out" \
     "localhost/tvbench-$b" --backend "$b" --runs "$RUNS" --res "$RES" --steps "$STEPS" $WARNALWAYS $STATS -- $COMFY_ARGS >/dev/null
   pid=$(podman inspect -f '{{.State.Pid}}' "tvbench-$b")

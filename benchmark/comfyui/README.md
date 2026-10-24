@@ -174,6 +174,42 @@ torchvulkan 0.2.0 + #33), 10 images, KDE desktop and Steam running:
   not. The cause is not known yet. `monitor.py` now also logs the memory and fabric clocks
   (`gpu_mclk_mhz`, `gpu_fclk_mhz`) for the next runs.
 
+### Minimal reproducer and per-kernel GPU profile, 2026-10-24
+
+[`debug/profile-0.2.1`](https://github.com/hartmark/torchvulkan/tree/debug/profile-0.2.1) is 0.2.1 plus
+the counters and a per-op GPU profiler: with `TORCHVULKAN_GPU_PROFILE=1` every op gets a timestamp
+before and after it (with a barrier, so ops are serialised) and `torchvulkan.gpu_profile()` returns
+`{"kernel:dtype": (count, total_ms)}`.
+
+ComfyUI (`results/prof-gpu`, 6 images): the op mix per sampling step is the same in fast and slow
+images, but some kernels get much slower — `reduce_subgroup:Float` 547 → 9541 µs, `cast:Half`
+455 → 4792 µs, `binary:Float` 153 → 986 µs, `integer_binary:Byte` 275 → 753 µs, matmul 7.2 → 9.7 ms —
+while others (`binary:Half`, `unary:Half`, `reduce_subgroup:Half`, `copy:UInt16`) don't change.
+
+`repro_evict.py` reproduces it in ~30 s without ComfyUI: 5 GiB that stay allocated (a text
+encoder), 5.5 GiB of uint8 "weights" read every step through a cast to fp16 (like GGUF
+dequantization) and reloaded from the CPU every 4 steps (like ComfyUI reloading the model per
+image), plus differently sized temporaries:
+
+```
+python repro_evict.py --resident-gb 5 --weights-gb 5.5 --steps 16 --reload-every 4 --temp-max-mb 800
+```
+
+On the RX 7800 XT with the desktop holding ~2.4 GB, 0.2.1 gives (same every run):
+
+```
+step  6:  0.14 s (weight reads  0.09 s) | binary:Half  38 ms/88 ( 437 us)  fill:Half  29 ms/7 (4120 us)
+step  7:  0.48 s (weight reads  0.47 s) | binary:Half 229 ms/88 (2607 us)  copy     212 ms/95 (2227 us)
+...steps 7-14 stay slow...
+step 15:  0.11 s (weight reads  0.07 s) | binary:Half  37 ms/88 ( 425 us)  copy      19 ms/95 ( 200 us)
+```
+
+Every step releases the whole buffer cache 1–5 times because the budget is reached, and after each
+release the allocation bypasses the budget (#34). Once the device is physically overcommitted the
+kernel evicts buffers to system memory, and every kernel that touches one of them — the weights,
+but also recycled cache buffers such as the accumulator — runs 6–11× slower. With #33 (budget
+respected, no bypass) the same script raises `OutOfMemoryError` at step 0 instead.
+
 ### torchvulkan 0.2.1, 2026-10-24
 
 0.2.1 (= `main` 078dd8a: #34 merged, `mem_get_info()` refreshes the budget, the new `.out` ops).
@@ -275,5 +311,6 @@ Both backends run with `--disable-dynamic-vram --disable-pinned-memory` by defau
 | `summarize.py` | builds `results.md` / `results.json` |
 | `repro_perf.py`, `repro_ops.py` | fast sampling-step stand-in and per-op timing (see Profiling) |
 | `repro_oom.py`, `repro_budget_lag.py` | out-of-memory reproducers |
+| `repro_evict.py` | minimal reproducer of the slow, overcommitted state |
 
 `comfyui-vulkan.patch` is a patch against ComfyUI and is GPL-3.0 like ComfyUI; everything else follows this repository's license.
