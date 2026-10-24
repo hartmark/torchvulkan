@@ -116,6 +116,38 @@ reproducer fails at step 2 (budget stuck at 7.7 GiB). A related observation: tor
 cache keeps every freed buffer until an allocation fails, so a running torchvulkan process holds
 VRAM up to its budget and a second GPU process that starts later can run out of memory.
 
+### Testing #34 (bypass the budget after releasing the cache), 2026-10-24
+
+Built from #34 (6288f04, includes `main` 189ac37 with the new `.out` operators) and, for
+comparison, `main` without a fix and #33 rebased onto the same `main`. RX 7800 XT, KDE desktop running.
+
+Reproducers (same as above):
+
+| | `main` (no fix) | #34 | #33 |
+|---|---|---|---|
+| budget 4 s after `empty_cache()` (×0.95) | 9.20 GiB (stale) | 9.21 GiB (stale) | 12.95 GiB |
+| `repro_oom.py --weights-gb 7 --act-mb 64,512 --upload` | OOM at step 10 | 30/30 | 30/30 |
+| same with a 4 GiB VRAM hog started first (80 steps) | OOM at step 2 | 80/80 | 80/80 |
+
+ComfyUI, 10 images at 1024², default flags, `--warn-always` (`torch.set_warn_always(True)`, so every
+torchvulkan CPU fallback is logged instead of only the first):
+
+| run | torchvulkan | images OK | warm image (median) | sampling | CPU fallbacks |
+|---|---|---|---|---|---|
+| `bernard-rx7800xt-pr34` | `main` + #34 | 10/10 | 83.2 s | 9.5 s/it | none |
+| `bernard-rx7800xt-pr34-vramload` (2nd process holding 3 GiB VRAM) | `main` + #34 | 10/10 | 95.8 s | 10.9 s/it | none |
+| `bernard-rx7800xt-fix2-on-main` | `main` + #33 | 10/10 | 94.7 s | 10.9 s/it | none |
+| `abab-r1-fix` (5 images) | 0.2.0 + #33 | 5/5 | 96.6 s | 9.5 s/it | `aten::silu.out` × 140, `aten::add.out` × 36 |
+
+- Both fixes avoid the out-of-memory errors in all runs, also with another process holding VRAM.
+- No operation fell back to the CPU on `main`; with 0.2.0 the same workflow logged `aten::silu.out`
+  and `aten::add.out` every step (only the first one is shown without `--warn-always`).
+- All runs from this night were much slower than the afternoon run of the same 0.2.0 + #33 build
+  (`bernard-rx7800xt-budgetfix`: 54.7 s per image, 5.0 s/it), including that build itself
+  (`abab-r1-fix`: 96.6 s, 9.5 s/it). So the night numbers do not show a speed difference between #34,
+  #33 and `main`; the cause of the slower night runs is not known yet. An interleaved A/B/C run was
+  stopped after its first part, to be repeated.
+
 All four first images (same seed) are visually identical:
 ![first images](results/first-images-kozel-rocm-vulkan-bernard-rocm-vulkan.png)
 (RX 9060 XT ROCm, RX 9060 XT Vulkan, RX 7800 XT ROCm, RX 7800 XT Vulkan)

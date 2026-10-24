@@ -101,6 +101,7 @@ print(f'loaded {len(weights) * a.weight_mb / 1024:.1f} GiB of weights in {time.t
 lo, hi = (int(x) for x in a.act_mb.split(','))
 host_chunk = torch.full((a.stream_chunk_mb << 18,), 2.0, dtype=torch.float32)
 ok = 0
+t_steps = time.time()
 for step in range(a.steps):
     try:
         for _ in range(a.stream_mb // a.stream_chunk_mb):
@@ -124,4 +125,5 @@ for step in range(a.steps):
     if step % a.report_every == a.report_every - 1:
         report(f'step {step + 1}')
 report('end')
-print(f'RESULT steps_ok={ok}/{a.steps} weights_gib={len(weights) * a.weight_mb / 1024:.1f}', flush=True)
+print(f'RESULT steps_ok={ok}/{a.steps} weights_gib={len(weights) * a.weight_mb / 1024:.1f} '
+      f'steps_s={time.time() - t_steps:.1f}', flush=True)

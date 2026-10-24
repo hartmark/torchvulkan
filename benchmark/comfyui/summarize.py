@@ -35,7 +35,8 @@ for b in ('rocm', 'vulkan'):
             err = f"image {len(run['prompts']) + 1} failed: {exc[-1][:400]}"
     s = {'status': run['status'], 'error': err, 'device': run.get('device'),
          'versions': run.get('versions'), 'startup_s': run.get('startup_s'), 'images_ok': len(p),
-         'runs': run['runs'], 'fallbacks': run.get('torchvulkan_fallbacks', [])}
+         'runs': run['runs'], 'fallbacks': run.get('torchvulkan_fallbacks', []),
+         'fallback_counts': run.get('fallback_counts'), 'warn_always': run.get('warn_always', False)}
     if p:
         s['cold_s'] = p[0]['seconds']
         warm = [x['seconds'] for x in p[1:]]
@@ -105,9 +106,13 @@ lines = [f"# torchvulkan vs ROCm in ComfyUI — {host['gpu']}", '',
 for b in R:
     if backends[b].get('error'):
         lines.append(f"**{b} error:** `{backends[b]['error']}`")
-    if backends[b].get('fallbacks'):
-        fb = [x.strip() for x in backends[b]['fallbacks'] if 'Out of memory' not in x]
-        if fb:
+    fb = [x.strip() for x in backends[b].get('fallbacks') or [] if 'Out of memory' not in x]
+    if b == 'vulkan':
+        if backends[b].get('warn_always') and backends[b].get('fallback_counts') is not None:
+            fc = backends[b]['fallback_counts']
+            lines.append(f"**{b} CPU fallbacks (every occurrence logged, {backends[b]['images_ok']} images):** "
+                         + ('; '.join(f'`{k}` × {v}' for k, v in fc.items()) if fc else 'none'))
+        elif fb:
             lines.append(f"**{b} CPU fallbacks logged:** " + '; '.join(f'`{x}`' for x in fb))
 lines.append('')
 KEEP = ('backend=', 'comfyui=', 'gguf_node=', 'python ', 'vulkan-radeon', 'torch ', 'torchvision ', 'torchvulkan ',

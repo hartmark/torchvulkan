@@ -13,6 +13,8 @@ ap.add_argument('--vae', default='ae.safetensors')
 ap.add_argument('--keep-images', type=int, default=1, help='keep the first N images in /out')
 ap.add_argument('--out', default='/out')
 ap.add_argument('--port', type=int, default=8188)
+ap.add_argument('--warn-always', action='store_true',
+                help='torch.set_warn_always(True): log every torchvulkan CPU fallback, not just the first')
 ap.add_argument('comfy_args', nargs='*', help='extra ComfyUI arguments (after --)')
 a = ap.parse_args()
 
@@ -63,8 +65,14 @@ def sampling_seconds(text):
 
 os.makedirs(a.out, exist_ok=True)
 log_path = os.path.join(a.out, 'comfyui.log')
-cmd = [sys.executable, 'main.py', '--listen', '127.0.0.1', '--port', str(a.port), '--disable-auto-launch',
-       '--output-directory', a.out, '--temp-directory', '/tmp']
+comfy = ['main.py', '--listen', '127.0.0.1', '--port', str(a.port), '--disable-auto-launch',
+         '--output-directory', a.out, '--temp-directory', '/tmp']
+if a.warn_always:
+    boot = ('import sys, runpy, torch; torch.set_warn_always(True); '
+            'sys.argv = sys.argv[1:]; runpy.run_path("main.py", run_name="__main__")')
+    cmd = [sys.executable, '-W', 'always', '-c', boot] + comfy
+else:
+    cmd = [sys.executable] + comfy
 if a.backend == 'vulkan':
     cmd.append('--vulkan')
 cmd += a.comfy_args
@@ -143,6 +151,14 @@ finally:
     res['t_end'] = time.time()
     text = open(log_path, errors='replace').read()
     res['torchvulkan_fallbacks'] = sorted(set(re.findall(r'torchvulkan \[(?:NOT IMPLEMENTED|WARNING)\]: ([^(\n]+)', text)))
+    counts = {}
+    for op in re.findall(r'Silent fallback detected for operation: ([\w.:]+)', text):
+        op = op.rstrip('.')
+        counts[op] = counts.get(op, 0) + 1
+    for msg in re.findall(r'torchvulkan \[WARNING\]: ([^(\n]+)', text):
+        counts[msg.strip()] = counts.get(msg.strip(), 0) + 1
+    res['fallback_counts'] = dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+    res['warn_always'] = a.warn_always
     for n, p in enumerate(sorted(glob.glob(os.path.join(a.out, f'bench-{a.backend}_*.png')))):
         if n >= a.keep_images:
             os.remove(p)

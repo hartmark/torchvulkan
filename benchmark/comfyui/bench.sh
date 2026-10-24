@@ -19,12 +19,13 @@ usage: $0 [-n RUNS] [-b rocm,vulkan] [-m MODELS_DIR] [-V VENVS_DIR] [-o OUT_DIR]
                  (default "--disable-dynamic-vram --disable-pinned-memory")
   --no-build     reuse existing localhost/tvbench-<backend> images
   --new-venv     recreate the venvs even if they exist
+  --warn-always  log every torchvulkan CPU fallback (torch.set_warn_always(True)) and count them
 Stop other GPU users first; the script warns if VRAM is already in use.
 EOF
 }
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-RUNS=10 BACKENDS=rocm,vulkan MODELS=$HERE/models VENVS=$HERE/venvs OUT= RES=1024 STEPS=8 BUILD=1 NEWVENV=0
+RUNS=10 BACKENDS=rocm,vulkan MODELS=$HERE/models VENVS=$HERE/venvs OUT= RES=1024 STEPS=8 BUILD=1 NEWVENV=0 WARNALWAYS=
 COMFY_ARGS="--disable-dynamic-vram --disable-pinned-memory"
 while [ $# -gt 0 ]; do
   case $1 in
@@ -33,6 +34,7 @@ while [ $# -gt 0 ]; do
     -m) MODELS=$2; shift 2 ;;
     -V) VENVS=$2; shift 2 ;;
     --new-venv) NEWVENV=1; shift ;;
+    --warn-always) WARNALWAYS=--warn-always; shift ;;
     -o) OUT=$2; shift 2 ;;
     -r) RES=$2; shift 2 ;;
     -s) STEPS=$2; shift 2 ;;
@@ -122,7 +124,7 @@ for b in "${BL[@]}"; do
   podman run -d --replace --name "tvbench-$b" "${dev[@]}" --group-add keep-groups \
     --security-opt seccomp=unconfined --security-opt label=disable \
     -v "$MODELS:/models:ro" -v "$VENVS/$b:/venv:ro" -v "$OUT/$b:/out" \
-    "localhost/tvbench-$b" --backend "$b" --runs "$RUNS" --res "$RES" --steps "$STEPS" -- $COMFY_ARGS >/dev/null
+    "localhost/tvbench-$b" --backend "$b" --runs "$RUNS" --res "$RES" --steps "$STEPS" $WARNALWAYS -- $COMFY_ARGS >/dev/null
   pid=$(podman inspect -f '{{.State.Pid}}' "tvbench-$b")
   python3 "$HERE/monitor.py" "$pid" "$OUT/$b/monitor.csv" &
   mon=$!
