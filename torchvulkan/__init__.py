@@ -58,6 +58,9 @@ def max_memory_allocated(device=None) -> int:
 def memory_reserved(device=None) -> int:
     return _C._memory_usage(_device_index(device))
 
+def mem_get_info(device=None) -> tuple:
+    return _C._mem_get_info(_device_index(device))
+
 def reset_peak_memory_stats(device=None) -> None:
     _C._reset_peak_memory_stats(_device_index(device))
 

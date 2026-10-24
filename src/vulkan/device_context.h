@@ -56,6 +56,7 @@ struct DeviceContext {
     size_t memoryBudget();
     size_t memoryUsage();
     size_t memoryTotal();
+    size_t memoryFree();
     void recordAllocation(size_t bytes);
     void recordFree(size_t bytes);
     void flush();
