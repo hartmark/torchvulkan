@@ -174,6 +174,31 @@ torchvulkan 0.2.0 + #33), 10 images, KDE desktop and Steam running:
   not. The cause is not known yet. `monitor.py` now also logs the memory and fabric clocks
   (`gpu_mclk_mhz`, `gpu_fclk_mhz`) for the next runs.
 
+### torchvulkan 0.2.1, 2026-10-24
+
+0.2.1 (= `main` 078dd8a: #34 merged, `mem_get_info()` refreshes the budget, the new `.out` ops).
+RX 7800 XT with Resizable BAR, KDE desktop running, 10 images, `--warn-always`. The ComfyUI patch
+now sizes its offloading from `torchvulkan.mem_get_info()` when available
+(`TVBENCH_VULKAN_FREE=sysfs` restores the old amdgpu-sysfs estimate):
+
+| | ROCm 7.1 | Vulkan 0.2.1, `mem_get_info` | Vulkan 0.2.1, sysfs |
+|---|---|---|---|
+| images OK | 10/10 | 10/10 | 10/10 |
+| first image | 30.7 s | 83.4 s | 78.9 s |
+| warm image median | 19.7 s | 80.7 s | 77.2 s |
+| warm image min / max | 19.6 / 20.5 s | **48.1** / 81.7 s | 64.1 / 82.7 s |
+| sampling (median) | 2.25 s/it | 9.25 s/it | 8.88 s/it |
+| CPU fallbacks (every occurrence logged) | – | none | none |
+| GTT peak | 0.27 GB | 4.7 GB | 5.0 GB |
+| GPU power avg | 206 W | 162 W | 160 W |
+
+- No out-of-memory errors and no CPU fallbacks with 0.2.1.
+- Per image the Vulkan times are bimodal: 48–52 s (41 s of sampling, as fast as the best 0.2.0
+  run) or ~81 s (74 s of sampling): 83, 81, 82, 82, 70, **49**, 81, **52**, **48**, 81 s with
+  `mem_get_info`. That matches the eviction state described in "Profiling" above.
+- The memory clock stayed at 1218 MHz throughout (new `gpu_mclk_mhz` column), so the slow images are
+  not a memory downclock.
+
 ### Profiling the slow Vulkan runs, 2026-10-24
 
 Tools: [`debug/dispatch-stats`](https://github.com/hartmark/torchvulkan/tree/debug/dispatch-stats)

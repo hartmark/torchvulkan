@@ -1,0 +1,151 @@
+{
+ "backend": "rocm",
+ "cmd": [
+  "-W",
+  "always",
+  "-c",
+  "import sys, runpy, torch\ntorch.set_warn_always(True)\nsys.argv = sys.argv[1:]\nrunpy.run_path(\"main.py\", run_name=\"__main__\")\n",
+  "main.py",
+  "--listen",
+  "127.0.0.1",
+  "--port",
+  "8188",
+  "--disable-auto-launch",
+  "--output-directory",
+  "/out",
+  "--temp-directory",
+  "/tmp",
+  "--disable-dynamic-vram",
+  "--disable-pinned-memory"
+ ],
+ "runs": 10,
+ "res": 1024,
+ "steps": 8,
+ "unet": "z_image_turbo-Q6_K.gguf",
+ "text_encoder": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+ "vae": "ae.safetensors",
+ "status": "ok",
+ "prompts": [
+  {
+   "i": 0,
+   "seed": 1000,
+   "start": 1792855155.3826394,
+   "end": 1792855186.0823567,
+   "seconds": 30.7,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 1,
+   "seed": 1001,
+   "start": 1792855186.0834727,
+   "end": 1792855205.7305758,
+   "seconds": 19.65,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 2,
+   "seed": 1002,
+   "start": 1792855205.7306921,
+   "end": 1792855226.2711363,
+   "seconds": 20.54,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 3,
+   "seed": 1003,
+   "start": 1792855226.2712464,
+   "end": 1792855246.3119876,
+   "seconds": 20.04,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 4,
+   "seed": 1004,
+   "start": 1792855246.3120835,
+   "end": 1792855265.8728592,
+   "seconds": 19.56,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 5,
+   "seed": 1005,
+   "start": 1792855265.8729773,
+   "end": 1792855285.4735403,
+   "seconds": 19.6,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 6,
+   "seed": 1006,
+   "start": 1792855285.473638,
+   "end": 1792855305.0678637,
+   "seconds": 19.59,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 7,
+   "seed": 1007,
+   "start": 1792855305.067972,
+   "end": 1792855325.604973,
+   "seconds": 20.54,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 8,
+   "seed": 1008,
+   "start": 1792855325.6050594,
+   "end": 1792855345.6418295,
+   "seconds": 20.04,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  },
+  {
+   "i": 9,
+   "seed": 1009,
+   "start": 1792855345.641912,
+   "end": 1792855365.2726839,
+   "seconds": 19.63,
+   "sampling_s": 18,
+   "s_per_it": 2.25
+  }
+ ],
+ "versions": [
+  "backend=rocm",
+  "comfyui=6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab",
+  "gguf_node=1544f8ea9cb47dc7f5436c10c0db5a5d54a9d105",
+  "python 3.14.8-1",
+  "comfy-aimdo                                0.6.0",
+  "comfy-angle                                0.1.1",
+  "comfy-kitchen                              0.2.40",
+  "comfyui-embedded-docs                      0.5.14",
+  "comfyui_frontend_package                   1.57.1",
+  "comfyui_workflow_templates                 0.11.96",
+  "comfyui-workflow-templates-core            0.3.387",
+  "comfyui-workflow-templates-json            0.1.122",
+  "comfyui-workflow-templates-media-api       0.3.84",
+  "comfyui-workflow-templates-media-assets-01 0.1.48",
+  "comfyui-workflow-templates-media-assets-02 0.1.23",
+  "comfyui-workflow-templates-media-image     0.3.160",
+  "comfyui-workflow-templates-media-other     0.3.229",
+  "comfyui-workflow-templates-media-video     0.3.101",
+  "torch                                      2.13.0+rocm7.1",
+  "torchsde                                   0.2.6",
+  "torchvision                                0.28.0+rocm7.1",
+  "triton-rocm                                3.7.1"
+ ],
+ "t_start": 1792855140.3980074,
+ "device": "AMD Radeon Graphics (gfx1101)",
+ "startup_s": 8.0,
+ "t_end": 1792855367.1385298,
+ "torchvulkan_fallbacks": [],
+ "fallback_counts": {},
+ "warn_always": true
+}

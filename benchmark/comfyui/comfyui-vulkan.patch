@@ -11,7 +11,7 @@ index 135a899..25d1a44 100644
  
  parser.add_argument("--oneapi-device-selector", type=str, default=None, metavar="SELECTOR_STRING", help="Sets the oneAPI device(s) this instance will use.")
 diff --git a/comfy/model_management.py b/comfy/model_management.py
-index aa3e048..6c5d274 100644
+index aa3e048..91d0c4e 100644
 --- a/comfy/model_management.py
 +++ b/comfy/model_management.py
 @@ -108,6 +108,28 @@ if args.deterministic:
@@ -71,7 +71,7 @@ index aa3e048..6c5d274 100644
          else:
              return "{}".format(device.type)
      elif is_intel_xpu():
-@@ -1828,6 +1857,16 @@ def get_free_memory(dev=None, torch_free_too=False):
+@@ -1828,6 +1857,21 @@ def get_free_memory(dev=None, torch_free_too=False):
          if directml_enabled:
              mem_free_total = 1024 * 1024 * 1024 #TODO
              mem_free_torch = mem_free_total
@@ -79,16 +79,21 @@ index aa3e048..6c5d274 100644
 +            stats = torchvulkan.memory_stats()
 +            mem_active = stats['active_bytes.all.current']
 +            mem_reserved = stats['reserved_bytes.all.current']
-+            total = _vulkan_sysfs("mem_info_vram_total")
-+            used = _vulkan_sysfs("mem_info_vram_used")
-+            if total is None or used is None:
-+                total, used = torchvulkan.get_device_properties().total_memory, mem_reserved
 +            mem_free_torch = mem_reserved - mem_active
-+            mem_free_total = max(0, total - used) + mem_free_torch
++            if hasattr(torchvulkan, "mem_get_info") and os.environ.get("TVBENCH_VULKAN_FREE") != "sysfs":
++                # torchvulkan >= 0.2.1: what the allocator will actually allow (Vulkan memory budget)
++                mem_free_vk, _ = torchvulkan.mem_get_info()
++                mem_free_total = mem_free_vk + mem_free_torch
++            else:
++                total = _vulkan_sysfs("mem_info_vram_total")
++                used = _vulkan_sysfs("mem_info_vram_used")
++                if total is None or used is None:
++                    total, used = torchvulkan.get_device_properties().total_memory, mem_reserved
++                mem_free_total = max(0, total - used) + mem_free_torch
          elif is_intel_xpu():
              stats = torch.xpu.memory_stats(dev)
              mem_active = stats['active_bytes.all.current']
-@@ -1919,6 +1958,9 @@ def should_use_fp16(device=None, model_params=0, prioritize_performance=True, ma
+@@ -1919,6 +1963,9 @@ def should_use_fp16(device=None, model_params=0, prioritize_performance=True, ma
      if is_directml_enabled():
          return True
  
@@ -98,7 +103,7 @@ index aa3e048..6c5d274 100644
      if (device is not None and is_device_mps(device)) or mps_mode():
          return True
  
-@@ -1983,6 +2025,9 @@ def should_use_bf16(device=None, model_params=0, prioritize_performance=True, ma
+@@ -1983,6 +2030,9 @@ def should_use_bf16(device=None, model_params=0, prioritize_performance=True, ma
      if directml_enabled:
          return False
  
@@ -108,7 +113,7 @@ index aa3e048..6c5d274 100644
      if (device is not None and is_device_mps(device)) or mps_mode():
          if mac_version() < (14,):
              return False
-@@ -2141,6 +2186,9 @@ def lora_compute_dtype(device):
+@@ -2141,6 +2191,9 @@ def lora_compute_dtype(device):
  def synchronize():
      if cpu_mode():
          return
@@ -118,7 +123,7 @@ index aa3e048..6c5d274 100644
      if is_intel_xpu():
          torch.xpu.synchronize()
      elif is_ascend_npu():
-@@ -2152,7 +2200,10 @@ def soft_empty_cache(force=False):
+@@ -2152,7 +2205,10 @@ def soft_empty_cache(force=False):
      if cpu_mode():
          return
      global cpu_state
