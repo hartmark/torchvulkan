@@ -15,7 +15,7 @@ def num(x):
 
 
 def stats(rows, key, fn):
-    vals = [v for v in (num(r[key]) for r in rows) if v is not None]
+    vals = [v for v in (num(r.get(key)) for r in rows) if v is not None]
     return round(fn(vals), 1) if vals else None
 
 

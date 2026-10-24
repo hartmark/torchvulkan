@@ -24,6 +24,7 @@ Host: AMD Ryzen 9 5900X 12-Core Processor, 63 GB RAM, kernel 7.2.11-arch1-1, pod
 | GPU mem temp avg / max, °C | 71.8 / 78.0 |
 | GPU power avg / max, W | 132.4 / 306.0 |
 | GPU sclk avg, MHz | 1842.5 |
+| GPU mclk / fclk avg, MHz | – / – |
 | CPU temp max, °C | 77.0 |
 
 **vulkan CPU fallbacks logged:** `Silent fallback detected for operation: aten::add.out. Set TORCHVULKAN_STRICT=1 to enable strict mode.`

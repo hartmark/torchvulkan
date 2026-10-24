@@ -76,6 +76,10 @@
    "gpu_power_w_max": 270.0,
    "gpu_sclk_mhz_avg": 2201.2,
    "gpu_sclk_mhz_max": 2593.0,
+   "gpu_mclk_mhz_avg": null,
+   "gpu_mclk_mhz_max": null,
+   "gpu_fclk_mhz_avg": null,
+   "gpu_fclk_mhz_max": null,
    "gpu_edge_c_idle": 37.0
   },
   "vulkan": {
@@ -147,6 +151,10 @@
    "gpu_power_w_max": 287.0,
    "gpu_sclk_mhz_avg": 2082.9,
    "gpu_sclk_mhz_max": 2596.0,
+   "gpu_mclk_mhz_avg": null,
+   "gpu_mclk_mhz_max": null,
+   "gpu_fclk_mhz_avg": null,
+   "gpu_fclk_mhz_max": null,
    "gpu_edge_c_idle": 53.0
   }
  }

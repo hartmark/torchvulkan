@@ -82,6 +82,10 @@
    "gpu_power_w_max": 306.0,
    "gpu_sclk_mhz_avg": 1842.5,
    "gpu_sclk_mhz_max": 2593.0,
+   "gpu_mclk_mhz_avg": null,
+   "gpu_mclk_mhz_max": null,
+   "gpu_fclk_mhz_avg": null,
+   "gpu_fclk_mhz_max": null,
    "gpu_edge_c_idle": 48.0
   }
  }
