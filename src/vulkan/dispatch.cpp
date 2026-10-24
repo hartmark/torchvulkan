@@ -3,6 +3,8 @@
 #include "shader.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include "generated/shader_kernels.h"
 #include <unordered_map>
 
 void DAGDispatcher::recordOp(VkCommandBuffer cmd, const OpInfo* op)
@@ -117,6 +119,23 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
 
     VkCommandBuffer cmd = device->cache.allocateCommandBuffer();
 
+    GpuProfile& prof = device->gpu_profile;
+    const bool profiling = prof.enabled;
+    const uint32_t queries = 2 * static_cast<uint32_t>(operations.size());
+    std::vector<const OpInfo*> recorded;
+    if (profiling) {
+        if (prof.capacity < queries) {
+            if (prof.pool != VK_NULL_HANDLE) device->device_table.vkDestroyQueryPool(device->device, prof.pool, nullptr);
+            VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            qi.queryCount = std::max<uint32_t>(queries, 2048);
+            VK_CHECK(device->device_table.vkCreateQueryPool(device->device, &qi, nullptr, &prof.pool));
+            prof.capacity = qi.queryCount;
+        }
+        device->device_table.vkCmdResetQueryPool(cmd, prof.pool, 0, queries);
+        recorded.reserve(operations.size());
+    }
+
     std::vector<const OpInfo*> ready;
     for (const auto& op : operations)
     {
@@ -131,7 +150,16 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
         for (auto it = ready.begin(); it != ready.end(); ++it)
         {
             if (it == first_dispatch && it != ready.begin()) recordBarrier(cmd);
-            recordOp(cmd, *it);
+            if (profiling) {
+                uint32_t q = 2 * static_cast<uint32_t>(recorded.size());
+                device->device_table.vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, prof.pool, q);
+                recordOp(cmd, *it);
+                recordBarrier(cmd);
+                device->device_table.vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, prof.pool, q + 1);
+                recorded.push_back(*it);
+            } else {
+                recordOp(cmd, *it);
+            }
         }
 
         std::vector<const OpInfo*> next_wave;
@@ -170,6 +198,22 @@ void DAGDispatcher::dispatch(const std::vector<std::unique_ptr<OpInfo>>& operati
     VkResult wait_result = device->device_table.vkWaitForFences(device->device, 1, &fence, VK_TRUE, UINT64_MAX);
     TORCH_CHECK(wait_result == VK_SUCCESS, "torchvulkan [ERROR]: Wait for fence failed with VkResult ", wait_result, ".");
     device->stats.wait_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t_submit).count();
+
+    if (profiling && !recorded.empty()) {
+        std::vector<uint64_t> ts(2 * recorded.size());
+        VK_CHECK(device->device_table.vkGetQueryPoolResults(device->device, prof.pool, 0, static_cast<uint32_t>(ts.size()),
+            ts.size() * sizeof(uint64_t), ts.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
+        const double ns_per_tick = device->properties.limits.timestampPeriod;
+        std::lock_guard<std::mutex> lock(prof.mutex);
+        for (size_t i = 0; i < recorded.size(); i++) {
+            const OpInfo* op = recorded[i];
+            std::string name = op->type == OpType::COPY ? std::string("copy")
+                : std::string(torchvulkan::KERNEL_NAMES[op->kernel]) + ":" + c10::toString(op->dtype);
+            auto& e = prof.per_kernel[name];
+            e.first += 1;
+            e.second += (ts[2 * i + 1] - ts[2 * i]) * ns_per_tick / 1e6;
+        }
+    }
 
     device->cache.deleteCommandBuffer(cmd);
     device->cache.deleteFence(fence);

@@ -4,11 +4,26 @@
 #include <volk.h>
 
 #include <atomic>
+#include <cstdlib>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 #include "vk_mem_alloc.h"
 #include "cache.h"
 
 class VulkanShaderManager;
+
+// TORCHVULKAN_GPU_PROFILE=1 (or torchvulkan.set_gpu_profile(True)): every op gets a timestamp
+// before and after it with a barrier in between, so ops run one at a time and each one's GPU time
+// is attributed to "kernel:dtype". Slows things down; only for finding where GPU time goes.
+struct GpuProfile {
+    bool enabled = false;
+    VkQueryPool pool = VK_NULL_HANDLE;
+    uint32_t capacity = 0;
+    std::mutex mutex;
+    std::unordered_map<std::string, std::pair<uint64_t, double>> per_kernel;  // count, total ms
+};
 
 // Debug counters (torchvulkan.dispatch_stats()); relaxed atomics, cheap enough to leave on.
 struct DispatchStats {
@@ -66,8 +81,13 @@ struct DeviceContext {
     std::atomic<size_t> allocated_bytes{0};
     std::atomic<size_t> peak_allocated_bytes{0};
     DispatchStats stats;
+    GpuProfile gpu_profile;
 
-    DeviceContext() { cache.setOwner(this); }
+    DeviceContext() {
+        cache.setOwner(this);
+        const char* p = std::getenv("TORCHVULKAN_GPU_PROFILE");
+        gpu_profile.enabled = p != nullptr && p[0] != '\0' && p[0] != '0';
+    }
     DeviceContext(const DeviceContext&) = delete;
     DeviceContext& operator=(const DeviceContext&) = delete;
     ~DeviceContext();

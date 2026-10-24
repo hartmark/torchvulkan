@@ -96,6 +96,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         return r;
     });
 
+    m.def("_gpu_profile", [](int64_t device_index) {
+        DeviceContext* d = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        std::lock_guard<std::mutex> lock(d->gpu_profile.mutex);
+        py::dict r;
+        for (auto& [name, v] : d->gpu_profile.per_kernel) r[py::str(name)] = py::make_tuple(v.first, v.second);
+        return r;
+    });
+
+    m.def("_set_gpu_profile", [](int64_t device_index, bool on) {
+        DeviceContext* d = VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index));
+        d->shader_manager->flush();
+        std::lock_guard<std::mutex> lock(d->gpu_profile.mutex);
+        d->gpu_profile.enabled = on;
+        d->gpu_profile.per_kernel.clear();
+    });
+
     m.def("_reset_dispatch_stats", [](int64_t device_index) {
         VulkanContext::Instance().GetDeviceContext(static_cast<c10::DeviceIndex>(device_index))->stats.reset();
     });

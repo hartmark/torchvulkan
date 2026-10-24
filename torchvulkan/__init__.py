@@ -68,6 +68,14 @@ def dispatch_stats(device=None) -> dict:
     """Debug counters: submits by reason, GPU wait time, transfers, allocations, buffer cache."""
     return dict(_C._dispatch_stats(_device_index(device)))
 
+def gpu_profile(device=None) -> dict:
+    """GPU time per "kernel:dtype" as {name: (count, total_ms)} while profiling is on."""
+    return dict(_C._gpu_profile(_device_index(device)))
+
+def set_gpu_profile(enabled: bool, device=None) -> None:
+    """Serialise ops and time each one on the GPU (also TORCHVULKAN_GPU_PROFILE=1). Resets the profile."""
+    _C._set_gpu_profile(_device_index(device), enabled)
+
 def reset_dispatch_stats(device=None) -> None:
     _C._reset_dispatch_stats(_device_index(device))
 

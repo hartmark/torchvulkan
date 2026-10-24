@@ -55,6 +55,7 @@ DeviceContext::~DeviceContext()
     shader_manager = nullptr;
 
     cache.clear();
+    if (gpu_profile.pool != VK_NULL_HANDLE) device_table.vkDestroyQueryPool(device, gpu_profile.pool, nullptr);
 
     if (commandPool != VK_NULL_HANDLE) device_table.vkDestroyCommandPool(device, commandPool, nullptr);
     if (allocator != VK_NULL_HANDLE) vmaDestroyAllocator(allocator);

@@ -158,6 +158,8 @@ void VulkanShaderManager::dispatchShader(
 
     auto info = std::make_unique<OpInfo>();
     info->type = OpType::COMPUTE;
+    info->kernel = static_cast<int32_t>(key.kernel);
+    info->dtype = key.dtype;
     info->pipeline = submit.pipeline;
     info->pipelineLayout = submit.pipelineLayout;
     info->groupX = groupX;

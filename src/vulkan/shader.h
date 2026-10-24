@@ -51,6 +51,8 @@ enum OpType {
 
 struct OpInfo {
     OpType type = OpType::COMPUTE;
+    int32_t kernel = -1;  // torchvulkan::Kernel, for the GPU profile
+    c10::ScalarType dtype = c10::ScalarType::Undefined;
 
     // compute
     VkPipeline pipeline = VK_NULL_HANDLE;
