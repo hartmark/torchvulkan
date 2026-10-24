@@ -174,6 +174,50 @@ torchvulkan 0.2.0 + #33), 10 images, KDE desktop and Steam running:
   not. The cause is not known yet. `monitor.py` now also logs the memory and fabric clocks
   (`gpu_mclk_mhz`, `gpu_fclk_mhz`) for the next runs.
 
+### Profiling the slow Vulkan runs, 2026-10-24
+
+Tools: [`debug/dispatch-stats`](https://github.com/hartmark/torchvulkan/tree/debug/dispatch-stats)
+adds `torchvulkan.dispatch_stats()` (submits by reason, GPU wait vs. record time, host↔device
+transfers, VMA allocations, buffer-cache hits and pooled bytes, budget). `bench.sh --stats` samples
+it every 2 s inside ComfyUI (`vulkan/tvstats.jsonl`); `repro_perf.py` is a ~1-minute stand-in for a
+sampling step (16 DiT-style fp16 blocks, 5.3 GiB of weights, 4096 tokens) with `--hold-gb`,
+`--fill-after`, `--empty-cache` and per-process VRAM/GTT from fdinfo; `repro_ops.py` times single ops.
+
+Findings (RX 7800 XT, Resizable BAR, desktop holding ~2.1 GB VRAM):
+
+- No regression: the slow `bernard-rx7800xt-rebar` run used the same `_C` binary (sha256 4e1729947f7c…)
+  as the fast `bernard-rx7800xt-budgetfix` run.
+- ComfyUI (`results/prof-dbgfix`, `main` + #33 + counters): the GPU is busy all the time (≈1.9 s of
+  every 2 s waiting on fences, recording ~0), but in the slow phase each op takes about twice as
+  long (~1500 ops per 2 s instead of ~3200). The first sampling step of every image after the first
+  is fast (4.9 s/it), the rest slow (~10 s/it). The switch coincides with the budget jumping from
+  13.24 to 15.14 GiB, i.e. 0.95 × the whole 15.98 GiB heap although the desktop holds 2.1 GB. That
+  is what RADV reports when the process's own VRAM accounting exceeds the device-wide usage, i.e.
+  when some of its "VRAM" buffers have already been evicted to GTT. With that budget torchvulkan
+  keeps allocating into an overcommitted heap, buffers stay in GTT and the GPU reads them over PCIe.
+- `repro_perf.py`: VRAM pressure inside the process alone does not slow it down (2.03 s/step flat up
+  to 5 GiB extra; beyond that torchvulkan refuses, budget stays 13.26 GiB). With a second process
+  taking 2.5 GiB plus `empty_cache()` after every step (as ComfyUI does), #34 overcommits:
+  0.78 GiB of the process's VRAM is evicted, steps get 5 % slower and **stay slower after the other
+  process exits**; #33 raises `OutOfMemoryError` instead. This shows the mechanism, not yet the full
+  2× of the ComfyUI case.
+- On this GPU `is_bf16_supported()` is False and bf16 ops go through the CPU (e.g. a 4096×3840×11520
+  linear 2.8 s instead of 15.8 ms in fp16); ComfyUI picks fp16 here, so it is not affected.
+
+Code notes (torchvulkan `main` 189ac37) relevant to this:
+
+- Every `submit()` waits for its fence (`vkQueueSubmit` + `vkWaitForFences` in `DAGDispatcher::dispatch`),
+  so recording and GPU execution never overlap; a batch is submitted at 512 ops, when the touched
+  buffers exceed `memoryBudget() / 4` (and 256 MiB), when the metadata buffer is full, on every
+  device→host copy and on cache release. A wrong budget therefore also changes the batch size.
+- The device buffer cache keeps every freed buffer (keyed by rounded size) until an allocation
+  fails; in ComfyUI it held up to 7 GiB, so the process sits at its budget and any other VRAM user
+  forces evictions.
+- Host→device staging buffers (`HOST_TO_DEVICE`, GTT) are cached the same way and never trimmed:
+  1.7–3.9 GiB of GTT stayed allocated after model loads.
+- The budget check uses VMA's `vmaGetHeapBudgets` × 0.95 and has no notion of the process's own
+  buffers having been evicted.
+
 All four first images (same seed) are visually identical:
 ![first images](results/first-images-kozel-rocm-vulkan-bernard-rocm-vulkan.png)
 (RX 9060 XT ROCm, RX 9060 XT Vulkan, RX 7800 XT ROCm, RX 7800 XT Vulkan)
@@ -204,5 +248,7 @@ Both backends run with `--disable-dynamic-vram --disable-pinned-memory` by defau
 | `run_workflow.py` | runs inside the container: starts ComfyUI, queues the prompts, times them |
 | `monitor.py` | host-side sampler |
 | `summarize.py` | builds `results.md` / `results.json` |
+| `repro_perf.py`, `repro_ops.py` | fast sampling-step stand-in and per-op timing (see Profiling) |
+| `repro_oom.py`, `repro_budget_lag.py` | out-of-memory reproducers |
 
 `comfyui-vulkan.patch` is a patch against ComfyUI and is GPL-3.0 like ComfyUI; everything else follows this repository's license.

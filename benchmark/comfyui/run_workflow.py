@@ -13,6 +13,8 @@ ap.add_argument('--vae', default='ae.safetensors')
 ap.add_argument('--keep-images', type=int, default=1, help='keep the first N images in /out')
 ap.add_argument('--out', default='/out')
 ap.add_argument('--port', type=int, default=8188)
+ap.add_argument('--stats', action='store_true',
+                help='inside ComfyUI, write torchvulkan.dispatch_stats() to <out>/tvstats.jsonl every 2 s (debug builds)')
 ap.add_argument('--warn-always', action='store_true',
                 help='torch.set_warn_always(True): log every torchvulkan CPU fallback, not just the first')
 ap.add_argument('comfy_args', nargs='*', help='extra ComfyUI arguments (after --)')
@@ -67,10 +69,27 @@ os.makedirs(a.out, exist_ok=True)
 log_path = os.path.join(a.out, 'comfyui.log')
 comfy = ['main.py', '--listen', '127.0.0.1', '--port', str(a.port), '--disable-auto-launch',
          '--output-directory', a.out, '--temp-directory', '/tmp']
-if a.warn_always:
-    boot = ('import sys, runpy, torch; torch.set_warn_always(True); '
-            'sys.argv = sys.argv[1:]; runpy.run_path("main.py", run_name="__main__")')
-    cmd = [sys.executable, '-W', 'always', '-c', boot] + comfy
+STATS_THREAD = """
+import json, threading, time
+def _tvstats(path):
+    import torchvulkan
+    while not hasattr(torchvulkan, 'dispatch_stats') or not torchvulkan.is_initialized():
+        time.sleep(1)
+    with open(path, 'a') as f:
+        while True:
+            f.write(json.dumps(dict(t=time.time(), **torchvulkan.dispatch_stats())) + chr(10))
+            f.flush()
+            time.sleep(2)
+threading.Thread(target=_tvstats, args=(%r,), daemon=True).start()
+"""
+if a.warn_always or a.stats:
+    boot = 'import sys, runpy, torch\n'
+    if a.warn_always:
+        boot += 'torch.set_warn_always(True)\n'
+    if a.stats and a.backend == 'vulkan':
+        boot += STATS_THREAD % os.path.join(a.out, 'tvstats.jsonl')
+    boot += 'sys.argv = sys.argv[1:]\nrunpy.run_path("main.py", run_name="__main__")\n'
+    cmd = [sys.executable] + (['-W', 'always'] if a.warn_always else []) + ['-c', boot] + comfy
 else:
     cmd = [sys.executable] + comfy
 if a.backend == 'vulkan':
